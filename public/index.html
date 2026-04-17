@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>日本旅遊規劃師 — AI 自動行程生成</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗾</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sky: #0284c7; --sky2: #0ea5e9; --sky1: #e0f2fe; --sky0: #f0f9ff;
+  --grn: #059669; --grn2: #10b981; --grn1: #d1fae5;
+  --fg: #0f172a; --fg2: #334155; --fg3: #64748b; --fg4: #94a3b8;
+  --bg: #f8fafc; --white: #fff; --bdr: #e2e8f0; --bdr2: #cbd5e1;
+  --red: #dc2626; --amber: #d97706; --amberbg: #fffbeb;
+  --font: 'Zen Maru Gothic', -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --mono: 'Courier New', monospace;
+  --radius: 14px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+input, select, textarea, button { font-family: var(--font); }
+::selection { background: var(--sky1); color: var(--sky); }
+
+/* Header */
+.header { background: var(--white); border-bottom: 1px solid var(--bdr); position: sticky; top: 0; z-index: 50; }
+.header-inner { max-width: 960px; margin: 0 auto; padding: 0 16px; height: 52px; display: flex; align-items: center; justify-content: space-between; }
+.logo { display: flex; align-items: center; gap: 8px; text-decoration: none; cursor: pointer; border: none; background: none; }
+.logo-badge { background: var(--sky); color: #fff; padding: 4px 10px; border-radius: 8px; font-weight: 900; font-size: 14px; letter-spacing: 1px; }
+.logo-text { font-weight: 800; font-size: 17px; color: var(--fg); }
+.header-btn { font-size: 13px; color: var(--fg3); background: none; border: none; cursor: pointer; font-weight: 600; }
+.header-btn:hover { color: var(--sky); }
+
+/* Container */
+.container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+
+/* Hero */
+.hero { text-align: center; padding: 20px 0 32px; animation: fadeUp .6s ease; }
+.hero h1 { font-size: 30px; font-weight: 900; color: var(--fg); margin-bottom: 10px; }
+.hero p { font-size: 15px; color: var(--fg3); line-height: 1.7; }
+
+/* Form Card */
+.form-card { max-width: 640px; margin: 0 auto; background: var(--white); border-radius: 18px; box-shadow: 0 4px 32px rgba(0,0,0,.06); border: 1px solid var(--bdr); overflow: hidden; animation: fadeUp .6s ease .1s both; }
+.form-header { padding: 24px 28px; color: #fff; transition: background .3s; }
+.form-header.car { background: linear-gradient(135deg, var(--sky), var(--sky2)); }
+.form-header.public { background: linear-gradient(135deg, var(--grn), var(--grn2)); }
+.form-header h2 { font-size: 21px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+.form-header p { margin-top: 5px; font-size: 13px; opacity: .8; }
+.form-body { padding: 24px 28px; }
+
+/* Section */
+.section { margin-bottom: 28px; }
+.sec-title { font-size: 11px; font-weight: 700; color: var(--fg3); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--bdr); }
+
+/* Inputs */
+.field-label { font-size: 13px; font-weight: 500; color: var(--fg2); margin-bottom: 4px; display: block; }
+.field-sub { font-size: 11px; color: var(--fg4); margin-top: 3px; }
+.inp, .sel, .txta {
+  width: 100%; border: 1px solid var(--bdr2); border-radius: 10px;
+  padding: 10px 12px; font-size: 14px; background: var(--white); color: var(--fg);
+  transition: border-color .15s;
+}
+.inp:focus, .sel:focus, .txta:focus { outline: none; border-color: var(--sky); box-shadow: 0 0 0 3px rgba(2,132,199,.1); }
+.txta { resize: none; height: 60px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 140px; }
+
+/* Flight Box */
+.flight-box { background: var(--bg); border: 1px solid var(--bdr); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+.flight-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.flight-label.arr { color: var(--sky); }
+.flight-label.dep { color: #c2410c; }
+
+/* Time Selector */
+.time-row { display: flex; gap: 4px; align-items: center; }
+.time-sel { flex: 1; padding: 8px 4px; border: 1px solid var(--bdr2); border-radius: 8px; font-size: 13px; text-align: center; background: var(--white); }
+.time-colon { color: var(--fg4); font-weight: 700; }
+
+/* Transport Toggle */
+.transport-row { display: flex; gap: 12px; }
+.transport-btn {
+  flex: 1; padding: 16px 12px; border-radius: 14px; border: 2px solid var(--bdr);
+  background: var(--white); cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; gap: 6px; transition: all .2s; color: var(--fg4);
+}
+.transport-btn:hover { border-color: var(--bdr2); }
+.transport-btn.on-car { border-color: var(--sky); background: var(--sky0); color: var(--sky); box-shadow: 0 2px 8px rgba(2,132,199,.12); }
+.transport-btn.on-pub { border-color: var(--grn); background: var(--grn1); color: var(--grn); box-shadow: 0 2px 8px rgba(5,150,105,.12); }
+.transport-icon { font-size: 28px; }
+.transport-label { font-weight: 700; font-size: 13px; }
+
+/* Interest Chips */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--bdr); background: var(--white);
+  color: var(--fg3); transition: all .15s; user-select: none;
+}
+.chip:hover { border-color: var(--sky); color: var(--sky); }
+.chip.on { background: var(--sky); color: #fff; border-color: var(--sky); box-shadow: 0 1px 4px rgba(2,132,199,.25); }
+.chip.on-g { background: var(--grn); color: #fff; border-color: var(--grn); }
+
+/* Checkbox */
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg2); cursor: pointer; }
+.check-row input { accent-color: var(--sky); }
+
+/* Submit */
+.submit-btn {
+  width: 100%; padding: 16px; border-radius: 14px; border: none; color: #fff;
+  font-size: 17px; font-weight: 800; cursor: pointer; transition: all .2s;
+  box-shadow: 0 4px 16px rgba(2,132,199,.25);
+}
+.submit-btn.car { background: linear-gradient(135deg, var(--sky), var(--sky2)); }
+.submit-btn.public { background: linear-gradient(135deg, var(--grn), var(--grn2)); }
+.submit-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(2,132,199,.3); }
+.submit-btn:active { transform: scale(.99); }
+.submit-btn:disabled { background: var(--fg4); cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed; inset: 0; z-index: 100; background: rgba(255,255,255,.93);
+  backdrop-filter: blur(10px); display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.spinner-wrap { position: relative; width: 80px; height: 80px; margin-bottom: 24px; }
+.spinner { width: 80px; height: 80px; border-radius: 50%; border: 4px solid var(--sky1); border-top-color: var(--sky); animation: spin 1s linear infinite; }
+.spinner-emoji { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.loading-msg { font-size: 18px; font-weight: 700; color: var(--fg); margin-bottom: 6px; }
+.loading-sub { font-size: 13px; color: var(--fg3); }
+.loading-bar { width: 200px; height: 5px; background: var(--bdr); border-radius: 3px; overflow: hidden; margin-top: 20px; }
+.loading-bar-inner { height: 100%; width: 0%; background: linear-gradient(90deg, var(--sky), var(--sky2)); border-radius: 3px; animation: progress 35s ease-out forwards; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes progress { 0%{width:0} 30%{width:50%} 70%{width:80%} 100%{width:95%} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+
+/* Error */
+.error-box { max-width: 640px; margin: 0 auto 20px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 14px 18px; font-size: 13px; color: var(--red); display: flex; gap: 10px; align-items: flex-start; animation: fadeUp .3s ease; }
+
+/* Result */
+.result-hero {
+  background: linear-gradient(135deg, var(--sky), var(--sky2), var(--grn));
+  border-radius: 18px; padding: 24px 28px; color: #fff; margin-bottom: 20px;
+  box-shadow: 0 4px 24px rgba(2,132,199,.18); animation: fadeUp .5s ease;
+}
+.result-hero h1 { font-size: 24px; font-weight: 900; margin-bottom: 6px; }
+.result-hero p { font-size: 13px; opacity: .85; line-height: 1.6; }
+.result-hero-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.result-hero-btn { background: rgba(255,255,255,.2); border: none; border-radius: 8px; padding: 6px 14px; color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; backdrop-filter: blur(4px); }
+.result-hero-btn:hover { background: rgba(255,255,255,.3); }
+.result-tags { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.result-tag { background: rgba(255,255,255,.2); border-radius: 20px; padding: 4px 14px; font-size: 11px; font-weight: 600; }
+
+/* Tabs */
+.tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.tab-btn {
+  padding: 8px 20px; border-radius: 10px; font-size: 13px; font-weight: 700;
+  cursor: pointer; border: 1px solid var(--bdr); background: var(--white); color: var(--fg3);
+  transition: all .15s;
+}
+.tab-btn.on { background: var(--sky); color: #fff; border-color: var(--sky); box-shadow: 0 2px 8px rgba(2,132,199,.2); }
+
+/* Day Card */
+.day-card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--bdr); overflow: hidden; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.03); animation: fadeUp .4s ease both; }
+.day-header {
+  width: 100%; padding: 14px 18px; display: flex; align-items: center; gap: 14px;
+  border: none; cursor: pointer; text-align: left; background: var(--white);
+  transition: background .15s;
+}
+.day-header:hover { background: var(--sky0); }
+.day-header.open { background: var(--sky0); }
+.day-num {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--sky), var(--sky2));
+  color: #fff; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(2,132,199,.25);
+}
+.day-num-label { font-size: 9px; font-weight: 800; opacity: .8; }
+.day-num-val { font-size: 20px; font-weight: 900; line-height: 1; }
+.day-info { flex: 1; min-width: 0; }
+.day-theme { font-weight: 700; font-size: 14px; color: var(--fg); }
+.day-meta { font-size: 11px; color: var(--fg3); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+.day-arrow { color: var(--fg4); font-size: 12px; transition: transform .2s; }
+.day-arrow.open { transform: rotate(180deg); }
+
+/* Activity Timeline */
+.act-list { border-top: 1px solid var(--bdr); }
+.act-item { display: flex; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #f1f5f9; transition: background .1s; }
+.act-item:last-child { border-bottom: none; }
+.act-item:hover { background: rgba(2,132,199,.02); }
+.act-timeline { display: flex; flex-direction: column; align-items: center; width: 50px; flex-shrink: 0; }
+.act-time { font-size: 11px; font-weight: 700; color: var(--sky); font-family: var(--mono); }
+.act-icon { width: 32px; height: 32px; border-radius: 10px; background: var(--sky1); display: flex; align-items: center; justify-content: center; margin-top: 4px; font-size: 16px; }
+.act-line { flex: 1; width: 1px; background: #bae6fd; margin-top: 4px; min-height: 12px; }
+.act-content { flex: 1; min-width: 0; padding-bottom: 4px; }
+.act-name { font-weight: 700; font-size: 14px; color: var(--fg); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.act-ticket { font-size: 10px; background: #fef3c7; color: #92400e; border-radius: 6px; padding: 2px 8px; font-weight: 700; }
+.act-desc { font-size: 12px; color: var(--fg3); margin-top: 3px; }
+.act-highlights { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.act-hl { background: var(--sky0); color: #0369a1; font-size: 10px; padding: 2px 8px; border-radius: 12px; border: 1px solid #bae6fd; }
+.act-travel { margin-top: 8px; background: var(--bg); border-radius: 8px; padding: 5px 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg3); }
+.act-travel b { font-weight: 600; }
+
+/* Advice & Packing */
+.info-card { background: var(--white); border-radius: var(--radius); border: 1px solid var(--bdr); padding: 20px; margin-bottom: 16px; animation: fadeUp .4s ease; }
+.info-card h3 { font-size: 15px; font-weight: 700; color: var(--fg); margin-bottom: 12px; }
+.advice-item { display: flex; gap: 10px; font-size: 13px; color: var(--fg2); margin-bottom: 8px; }
+.advice-num { color: var(--sky); font-weight: 700; flex-shrink: 0; }
+.pack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.pack-cat { background: var(--bg); border-radius: 10px; padding: 12px; }
+.pack-cat-title { font-weight: 700; font-size: 13px; color: var(--fg2); margin-bottom: 8px; }
+.pack-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.pack-item { background: var(--white); border: 1px solid var(--bdr); border-radius: 20px; padding: 2px 10px; font-size: 11px; color: var(--fg3); }
+
+/* Currency Widget */
+.currency-box { background: var(--amberbg); border: 1px solid #fde68a; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.currency-title { font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 10px; }
+.currency-row { display: flex; gap: 12px; align-items: flex-end; }
+.currency-col { flex: 1; }
+.currency-label { font-size: 11px; color: var(--fg3); margin-bottom: 4px; }
+.currency-inp { width: 100%; border: 1px solid var(--bdr2); border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: var(--mono); }
+.currency-result { background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: var(--mono); font-weight: 700; color: #92400e; }
+.currency-arrow { font-size: 20px; color: var(--fg4); padding-bottom: 6px; }
+.currency-rate { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--fg3); }
+.currency-rate input { border: 1px solid var(--bdr2); border-radius: 6px; padding: 4px 8px; font-size: 12px; width: 70px; font-family: var(--mono); }
+
+/* Footer */
+.footer { border-top: 1px solid var(--bdr); background: var(--white); margin-top: 48px; padding: 20px 16px; text-align: center; font-size: 11px; color: var(--fg4); }
+
+@media(max-width:480px) {
+  .hero h1 { font-size: 24px; }
+  .form-body { padding: 18px 16px; }
+  .result-hero { padding: 18px 16px; }
+  .act-item { padding: 10px 12px; gap: 10px; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <button class="logo" onclick="showHome()">
+      <span class="logo-badge">JP</span>
+      <span class="logo-text">Japan Travel</span>
+    </button>
+    <button class="header-btn" id="back-btn" onclick="showHome()" style="display:none">← 重新規劃</button>
+  </div>
+</header>
+
+<div id="loading-overlay" class="loading-overlay" style="display:none">
+  <div class="spinner-wrap">
+    <div class="spinner"></div>
+    <div class="spinner-emoji">🗾</div>
+  </div>
+  <div class="loading-msg" id="loading-msg">正在研究最佳路線...</div>
+  <div class="loading-sub">AI 正在打造專屬行程，約需 20-40 秒</div>
+  <div class="loading-bar"><div class="loading-bar-inner" id="loading-bar"></div></div>
+</div>
+
+<div class="container" id="main-container">
+  <!-- Home View -->
+  <div id="home-view">
+    <div class="hero">
+      <h1>🗾 規劃你的日本之旅</h1>
+      <p>專為家庭設計的 AI 行程生成器<br>輸入需求，自動安排景點、美食、交通路線</p>
+    </div>
+
+    <div id="error-box" class="error-box" style="display:none"></div>
+
+    <div class="form-card">
+      <div class="form-header car" id="form-header">
+        <h2 id="form-title">🚗 日本自駕行程規劃</h2>
+        <p>AI 為您生成專屬行程，含景點、美食、交通</p>
+      </div>
+      <div class="form-body">
+
+        <!-- 旅遊資訊 -->
+        <div class="section">
+          <div class="sec-title">🌏 旅遊資訊</div>
+          <div style="margin-bottom:12px">
+            <label class="field-label">旅遊區域</label>
+            <select class="sel" id="f-region">
+              <option value="all">🗾 全日本 (不限區域)</option>
+              <option value="hokkaido">🏔️ 北海道 (Hokkaido)</option>
+              <option value="tohoku">🌾 東北 (Tohoku)</option>
+              <option value="kanto">🗼 關東/東京 (Kanto)</option>
+              <option value="chubu">⛰️ 中部/北陸 (Chubu)</option>
+              <option value="kansai" selected>🏯 關西/大阪 (Kansai)</option>
+              <option value="chugoku">⛩️ 中國/四國 (Chugoku)</option>
+              <option value="kyushu">🌋 九州 (Kyushu)</option>
+              <option value="okinawa">🏖️ 沖繩 (Okinawa)</option>
+            </select>
+          </div>
+          <!-- Arrival -->
+          <div class="flight-box">
+            <div class="flight-label arr">✈️ 去程（抵達日本）</div>
+            <div class="row">
+              <div class="col"><label class="field-sub">日期</label><input type="date" class="inp" id="f-start" value="2026-05-01"></div>
+              <div style="width:170px"><label class="field-sub">抵達時間</label>
+                <div class="time-row">
+                  <select class="time-sel" id="f-arr-h"></select>
+                  <span class="time-colon">:</span>
+                  <select class="time-sel" id="f-arr-m"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Departure -->
+          <div class="flight-box">
+            <div class="flight-label dep">🛫 回程（離開日本）</div>
+            <div class="row">
+              <div class="col"><label class="field-sub">日期</label><input type="date" class="inp" id="f-end" value="2026-05-07"></div>
+              <div style="width:170px"><label class="field-sub">起飛時間</label>
+                <div class="time-row">
+                  <select class="time-sel" id="f-dep-h"></select>
+                  <span class="time-colon">:</span>
+                  <select class="time-sel" id="f-dep-m"></select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 交通方式 -->
+        <div class="section">
+          <div class="sec-title">🚗 交通方式</div>
+          <div class="transport-row">
+            <button class="transport-btn on-car" id="t-car" onclick="setTransport('car')">
+              <span class="transport-icon">🚗</span><span class="transport-label">租車自駕</span>
+            </button>
+            <button class="transport-btn" id="t-pub" onclick="setTransport('public')">
+              <span class="transport-icon">🚄</span><span class="transport-label">大眾運輸</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 成員 -->
+        <div class="section">
+          <div class="sec-title">👥 成員組成</div>
+          <div class="row" style="margin-bottom:10px">
+            <div class="col"><label class="field-sub">大人</label><input type="number" class="inp" id="f-adults" value="2" min="1" max="10"></div>
+            <div class="col"><label class="field-sub">小孩</label><input type="number" class="inp" id="f-kids" value="0" min="0" max="10"></div>
+          </div>
+          <input type="text" class="inp" id="f-members" placeholder="成員描述：例如 藥師夫婦、高中生、喜歡攝影..." style="margin-bottom:8px">
+          <textarea class="txta" id="f-requests" placeholder="特殊需求：例如 想去環球影城、有長輩需要慢節奏..."></textarea>
+          <div class="field-sub">AI 將盡力將特定需求排入行程中</div>
+        </div>
+
+        <!-- 偏好 -->
+        <div class="section">
+          <div class="sec-title">📍 偏好重點</div>
+          <div class="chips" id="chips-wrap"></div>
+          <label class="check-row">
+            <input type="checkbox" id="f-been"> 我們去過日本很多次了（AI 推薦深度景點）
+          </label>
+        </div>
+
+        <button class="submit-btn car" id="submit-btn" onclick="generate()">🪄 開始規劃旅程</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Result View -->
+  <div id="result-view" style="display:none"></div>
+</div>
+
+<footer class="footer">Japan Travel Planner · AI 生成行程僅供參考，請依實際狀況調整</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════
+let transport = 'car';
+let selectedInterests = new Set(['美食/和牛/海鮮', '神社/寺廟']);
+let plan = null;
+let isLoading = false;
+
+const INTERESTS = [
+  '自駕風景','溫泉','美食/和牛/海鮮','滑雪/雪景','歷史文化',
+  '神社/寺廟','購物','主題樂園','大自然','動漫周邊',
+  '花火景點','當季景點/櫻花','攝影打卡','親子活動',
+];
+const ICONS = {FOOD:'🍱',SIGHTSEEING:'⛩️',ACTIVITY:'🎯',HOTEL:'🏨',DRIVE:'🚗',SHOPPING:'🛍️'};
+const WX = {sunny:'☀️',cloudy:'⛅',rainy:'🌧️',snowy:'❄️'};
+const REGIONS = {
+  all:'全日本',hokkaido:'北海道',tohoku:'東北',kanto:'關東/東京',
+  chubu:'中部/北陸',kansai:'關西/大阪',chugoku:'中國/四國',kyushu:'九州',okinawa:'沖繩'
+};
+const MSGS = ['正在研究最佳路線... 🗾','搜尋隱藏版美食... 🍱','計算交通方案... 🚄','安排精彩行程... 📋','加入在地秘境... ✨','最終優化中... 🎌'];
+
+// ═══════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════
+(function init() {
+  // Time selectors
+  const arrH = document.getElementById('f-arr-h');
+  const arrM = document.getElementById('f-arr-m');
+  const depH = document.getElementById('f-dep-h');
+  const depM = document.getElementById('f-dep-m');
+  for (let i = 0; i < 24; i++) {
+    const opt = v => { const o = document.createElement('option'); o.value = o.textContent = String(v).padStart(2,'0'); return o; };
+    arrH.appendChild(opt(i)); depH.appendChild(opt(i));
+  }
+  ['00','10','15','20','30','40','45','50'].forEach(m => {
+    const o1 = document.createElement('option'); o1.value = o1.textContent = m; arrM.appendChild(o1);
+    const o2 = document.createElement('option'); o2.value = o2.textContent = m; depM.appendChild(o2);
+  });
+  arrH.value = '14'; depH.value = '11';
+  renderChips();
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// UI Helpers
+// ═══════════════════════════════════════════════════════════════
+function renderChips() {
+  const wrap = document.getElementById('chips-wrap');
+  wrap.innerHTML = INTERESTS
+    .filter(i => !(i.includes('自駕') && transport === 'public'))
+    .map(i => {
+      const on = selectedInterests.has(i);
+      const cls = on ? (transport==='car' ? 'chip on' : 'chip on-g') : 'chip';
+      return `<div class="${cls}" onclick="toggleInterest('${i}')">${i}</div>`;
+    }).join('');
+}
+
+function toggleInterest(i) {
+  selectedInterests.has(i) ? selectedInterests.delete(i) : selectedInterests.add(i);
+  renderChips();
+}
+
+function setTransport(mode) {
+  transport = mode;
+  const car = mode === 'car';
+  document.getElementById('t-car').className = `transport-btn ${car ? 'on-car' : ''}`;
+  document.getElementById('t-pub').className = `transport-btn ${car ? '' : 'on-pub'}`;
+  document.getElementById('form-header').className = `form-header ${mode}`;
+  document.getElementById('form-title').innerHTML = car ? '🚗 日本自駕行程規劃' : '🚄 日本自由行規劃';
+  document.getElementById('submit-btn').className = `submit-btn ${mode}`;
+  if (mode === 'public') selectedInterests.delete('自駕風景');
+  renderChips();
+}
+
+function showHome() {
+  document.getElementById('home-view').style.display = '';
+  document.getElementById('result-view').style.display = 'none';
+  document.getElementById('back-btn').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+}
+
+function showResult() {
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('result-view').style.display = '';
+  document.getElementById('back-btn').style.display = '';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Generate
+// ═══════════════════════════════════════════════════════════════
+async function generate() {
+  if (isLoading) return;
+  isLoading = true;
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ AI 正在規劃行程...<br><span style="font-size:11px;font-weight:400;opacity:.8">約需 20-40 秒</span>';
+
+  // Show loading
+  const overlay = document.getElementById('loading-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('loading-bar').style.animation = 'none';
+  void document.getElementById('loading-bar').offsetHeight;
+  document.getElementById('loading-bar').style.animation = 'progress 35s ease-out forwards';
+
+  let msgIdx = 0;
+  const msgEl = document.getElementById('loading-msg');
+  msgEl.textContent = MSGS[0];
+  const msgTimer = setInterval(() => { msgIdx = (msgIdx + 1) % MSGS.length; msgEl.textContent = MSGS[msgIdx]; }, 3500);
+
+  document.getElementById('error-box').style.display = 'none';
+
+  // Collect form data
+  const region = document.getElementById('f-region').value;
+  const startDate = document.getElementById('f-start').value;
+  const endDate = document.getElementById('f-end').value;
+  const arrTime = document.getElementById('f-arr-h').value.padStart(2,'0') + ':' + document.getElementById('f-arr-m').value;
+  const depTime = document.getElementById('f-dep-h').value.padStart(2,'0') + ':' + document.getElementById('f-dep-m').value;
+  const adults = document.getElementById('f-adults').value;
+  const kids = document.getElementById('f-kids').value;
+  const members = document.getElementById('f-members').value;
+  const requests = document.getElementById('f-requests').value;
+  const beenBefore = document.getElementById('f-been').checked;
+
+  const s = new Date(startDate), e = new Date(endDate);
+  const days = Math.ceil((e - s) / 86400000) + 1;
+  const regLabel = REGIONS[region] || region;
+  const isCar = transport === 'car';
+
+  const prompt = `你是專業日本旅遊規劃師。用繁體中文規劃。
+
+旅遊資訊：
+- 區域：${regLabel}
+- 日期：${startDate} ~ ${endDate}（${days}天）
+- 抵達：${arrTime}，離開：${depTime}
+- 成員：${adults}大人、${kids}小孩（${members}）
+- 交通：${isCar?'租車自駕':'大眾運輸'}
+- 興趣：${[...selectedInterests].join('、')}
+- 日本經驗：${beenBefore?'多次（推薦深度）':'初次（推薦經典）'}
+${requests?'- 特殊需求：'+requests:''}
+
+回傳純JSON（不要markdown）：
+{"tripTitle":"標題","overview":"2句摘要","advice":["建議1","建議2","建議3"],
+"packingList":[{"category":"衣物","items":["item1","item2"]}],
+"itinerary":[{"dayNumber":1,"date":"${startDate}","region":"地區","theme":"主題",
+"weather":{"condition":"天氣","temperature":"5~12°C","icon":"sunny"},
+"activities":[{"time":"14:00","name":"景點","description":"10字內描述",
+"highlights":["亮點1","亮點2"],"type":"SIGHTSEEING",
+"coordinates":{"lat":34.69,"lng":135.50},
+"ticketInfo":{"required":false,"priceEstimate":"免費","tips":""},
+"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km","details":"說明"}}]}]}
+
+規則：每天5-7活動含三餐、第一天從${arrTime}開始、最後天${depTime}前結束、
+type只能FOOD/SIGHTSEEING/ACTIVITY/HOTEL、要真實coordinates、餐廳給具體店名、
+travelToNext合理交通、確保JSON完整合法`;
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const jsonMatch = data.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('AI 回應格式錯誤，請重試');
+    plan = JSON.parse(jsonMatch[0]);
+    plan.transportationMode = transport;
+    renderResult();
+    showResult();
+  } catch (err) {
+    document.getElementById('error-box').innerHTML = `<span style="font-size:18px">⚠️</span><div><strong>生成失敗：</strong>${err.message}</div>`;
+    document.getElementById('error-box').style.display = 'flex';
+  } finally {
+    clearInterval(msgTimer);
+    overlay.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = '🪄 開始規劃旅程';
+    isLoading = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Render Result
+// ═══════════════════════════════════════════════════════════════
+let openDay = 0;
+let currentTab = 'itinerary';
+
+function renderResult() {
+  if (!plan) return;
+  const el = document.getElementById('result-view');
+  const regions = [...new Set(plan.itinerary?.map(d => d.region) || [])].join(' → ');
+  const transLabel = plan.transportationMode === 'car' ? '🚗 自駕' : '🚄 大眾運輸';
+
+  let html = `
+    <div class="result-hero">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div style="flex:1;min-width:200px">
+          <h1>${esc(plan.tripTitle || '日本之旅')}</h1>
+          <p>${esc(plan.overview || '')}</p>
+        </div>
+        <div class="result-hero-btns">
+          <button class="result-hero-btn" onclick="toggleCurrency()">💱 匯率</button>
+          <button class="result-hero-btn" onclick="showHome()">← 重新規劃</button>
+        </div>
+      </div>
+      <div class="result-tags">
+        <span class="result-tag">📅 ${plan.itinerary?.length || 0} 天</span>
+        <span class="result-tag">📍 ${esc(regions)}</span>
+        <span class="result-tag">${transLabel}</span>
+      </div>
+    </div>
+
+    <div id="currency-widget" style="display:none">
+      <div class="currency-box">
+        <div class="currency-title">💱 匯率換算</div>
+        <div class="currency-row">
+          <div class="currency-col"><div class="currency-label">日幣 JPY</div><input type="number" class="currency-inp" id="cur-jpy" value="10000" oninput="calcCurrency()"></div>
+          <div class="currency-arrow">→</div>
+          <div class="currency-col"><div class="currency-label">台幣 TWD</div><div class="currency-result" id="cur-twd">NT$ 2,100</div></div>
+        </div>
+        <div class="currency-rate">匯率 <input type="number" step="0.001" value="0.21" id="cur-rate" oninput="calcCurrency()"> TWD/JPY</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn ${currentTab==='itinerary'?'on':''}" onclick="setTab('itinerary')">📋 行程表</button>
+      <button class="tab-btn ${currentTab==='overview'?'on':''}" onclick="setTab('overview')">💡 建議與行李</button>
+    </div>
+
+    <div id="tab-content"></div>
+  `;
+  el.innerHTML = html;
+  renderTab();
+}
+
+function setTab(t) { currentTab = t; renderResult(); }
+function toggleCurrency() {
+  const el = document.getElementById('currency-widget');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+function calcCurrency() {
+  const jpy = parseFloat(document.getElementById('cur-jpy').value) || 0;
+  const rate = parseFloat(document.getElementById('cur-rate').value) || 0.21;
+  document.getElementById('cur-twd').textContent = 'NT$ ' + Math.round(jpy * rate).toLocaleString();
+}
+
+function renderTab() {
+  const el = document.getElementById('tab-content');
+  if (!el) return;
+
+  if (currentTab === 'overview') {
+    let h = '';
+    if (plan.advice?.length) {
+      h += `<div class="info-card"><h3>💡 旅遊建議</h3>`;
+      plan.advice.forEach((a, i) => { h += `<div class="advice-item"><span class="advice-num">${i+1}.</span><span>${esc(a)}</span></div>`; });
+      h += `</div>`;
+    }
+    if (plan.packingList?.length) {
+      h += `<div class="info-card"><h3>🧳 行李清單</h3><div class="pack-grid">`;
+      plan.packingList.forEach(cat => {
+        h += `<div class="pack-cat"><div class="pack-cat-title">${esc(cat.category)}</div><div class="pack-items">`;
+        (cat.items || []).forEach(item => { h += `<span class="pack-item">${esc(item)}</span>`; });
+        h += `</div></div>`;
+      });
+      h += `</div></div>`;
+    }
+    el.innerHTML = h;
+    return;
+  }
+
+  // Itinerary
+  let h = '';
+  (plan.itinerary || []).forEach((day, di) => {
+    const isOpen = openDay === di;
+    const wx = day.weather ? `${WX[day.weather.icon]||'🌤️'} ${day.weather.temperature}` : '';
+    h += `<div class="day-card" style="animation-delay:${di*0.05}s">
+      <button class="day-header ${isOpen?'open':''}" onclick="toggleDay(${di})">
+        <div class="day-num"><span class="day-num-label">DAY</span><span class="day-num-val">${day.dayNumber}</span></div>
+        <div class="day-info">
+          <div class="day-theme">${esc(day.theme || 'Day '+day.dayNumber)}</div>
+          <div class="day-meta"><span>📍${esc(day.region)}</span><span>📅${day.date}</span>${wx?`<span>${wx}</span>`:''}</div>
+        </div>
+        <span class="day-arrow ${isOpen?'open':''}">▼</span>
+      </button>`;
+
+    if (isOpen && day.activities) {
+      h += `<div class="act-list">`;
+      day.activities.forEach((act, ai) => {
+        const icon = ICONS[act.type] || '📍';
+        const hasTravel = act.travelToNext?.duration && ai < day.activities.length - 1;
+        h += `<div class="act-item">
+          <div class="act-timeline">
+            <span class="act-time">${act.time||''}</span>
+            <div class="act-icon">${icon}</div>
+            ${ai < day.activities.length - 1 ? '<div class="act-line"></div>' : ''}
+          </div>
+          <div class="act-content">
+            <div class="act-name">${esc(act.name)}
+              ${act.ticketInfo?.required ? `<span class="act-ticket">🎫 ${esc(act.ticketInfo.priceEstimate||'')}</span>` : ''}
+            </div>
+            <div class="act-desc">${esc(act.description||'')}</div>`;
+        if (act.highlights?.length) {
+          h += `<div class="act-highlights">${act.highlights.map(hl=>`<span class="act-hl">${esc(hl)}</span>`).join('')}</div>`;
+        }
+        if (hasTravel) {
+          const t = act.travelToNext;
+          const tIcon = t.mode === 'car' ? '🚗' : '🚄';
+          h += `<div class="act-travel">${tIcon} <b>${esc(t.duration)}</b>`;
+          if (t.distance) h += ` <span style="color:var(--fg4)">(${esc(t.distance)})</span>`;
+          if (t.details) h += ` <span style="color:var(--fg4)">· ${esc(t.details)}</span>`;
+          h += `</div>`;
+        }
+        h += `</div></div>`;
+      });
+      h += `</div>`;
+    }
+    h += `</div>`;
+  });
+  el.innerHTML = h;
+}
+
+function toggleDay(i) { openDay = openDay === i ? -1 : i; renderTab(); }
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>
