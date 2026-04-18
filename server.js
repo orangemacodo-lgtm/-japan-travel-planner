@@ -9,139 +9,141 @@ const API_KEY = process.env.GEMINI_API_KEY || '';
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '1mb' }));
 
-// ── 從 Gemini 回應中提取 JSON ────────────────────────────────
+// ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
-  
-  // 1. 嘗試直接解析（最理想情況）
+
+  // 1. 直接解析
   try { return JSON.parse(text.trim()); } catch (_) {}
-  
-  // 2. 移除 markdown code block 包裹
-  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlock) {
-    try { return JSON.parse(codeBlock[1].trim()); } catch (_) {}
-  }
-  
-  // 3. 找最大的 {...} 區塊
-  const braceMatch = text.match(/\{[\s\S]*\}/);
-  if (braceMatch) {
-    try { return JSON.parse(braceMatch[0]); } catch (_) {}
-    
-    // 4. JSON 可能被截斷，嘗試修復
-    let json = braceMatch[0];
-    // 找最後一個完整的 activity 或 day
-    const lastBracket = json.lastIndexOf(']');
-    if (lastBracket > 0) {
-      // 嘗試在最後的 ] 後面補上必要的 } 來關閉
-      for (let i = 0; i < 5; i++) {
-        try { return JSON.parse(json.substring(0, lastBracket + 1) + '}'.repeat(i + 1)); } catch (_) {}
+
+  // 2. 去 markdown code block
+  const cb = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (cb) { try { return JSON.parse(cb[1].trim()); } catch (_) {} }
+
+  // 3. 找最大 {...}
+  const m = text.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch (_) {}
+    // 4. 修復截斷的 JSON
+    const s = m[0];
+    const last = s.lastIndexOf(']');
+    if (last > 0) {
+      for (let i = 1; i <= 5; i++) {
+        try { return JSON.parse(s.substring(0, last + 1) + '}'.repeat(i)); } catch (_) {}
       }
     }
   }
-  
   return null;
 }
 
 // ── Gemini API 呼叫 ─────────────────────────────────────────
-async function callGemini(prompt) {
-  const models = [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash', 
-    'gemini-2.5-flash-lite',
-  ];
+async function callGemini(prompt, maxTokens) {
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
 
   for (const model of models) {
     try {
       console.log(`[AI] 嘗試 ${model}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
-      
-      const body = {
-        contents: [{ parts: [{ text: prompt }] }],
+
+      const { data } = await axios.post(url, {
+        contents: [{ parts: [{ text: prompt + '\n\n重要：只輸出 JSON，不要 markdown，不要解釋文字。' }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 8192,
+          maxOutputTokens: maxTokens || 65536,
         },
-      };
-
-      // gemini-2.5-flash 支援 JSON mode，但要關閉思考模式
-      if (model.includes('2.5')) {
-        body.generationConfig.responseMimeType = 'application/json';
-        // 關閉思考模式，避免輸出思考過程
-        body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-      }
-
-      const { data } = await axios.post(url, body, {
+      }, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
 
-      // 提取文字（可能在 parts 中有多個 part）
       const parts = data.candidates?.[0]?.content?.parts || [];
-      const text = parts.map(p => p.text || '').join('');
+      const text = parts
+        .filter(p => p.text)        // 只取文字 part（排除思考 part）
+        .map(p => p.text)
+        .join('');
+
+      const finishReason = data.candidates?.[0]?.finishReason || 'unknown';
 
       if (!text) {
-        console.error(`[AI] ${model}: 回應為空`);
+        console.error(`[AI] ${model}: 回應為空 (finishReason: ${finishReason})`);
         continue;
       }
 
-      console.log(`[AI] ${model} 成功，回傳 ${text.length} 字`);
-      return { model, text };
+      console.log(`[AI] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
+      return { model, text, finishReason };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
       console.error(`[AI] ${model} 失敗: ${msg}`);
     }
   }
-
   throw new Error('所有模型都失敗了，請稍後再試');
 }
 
 // ── 主 API ───────────────────────────────────────────────────
 app.post('/api/generate', async (req, res) => {
-  if (!API_KEY) {
-    return res.status(500).json({ ok: false, error: '伺服器未設定 GEMINI_API_KEY' });
-  }
+  if (!API_KEY) return res.status(500).json({ ok: false, error: '未設定 GEMINI_API_KEY' });
 
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ ok: false, error: '缺少 prompt' });
 
-    const { model, text } = await callGemini(prompt);
-    
-    // 嘗試解析 JSON
+    const { model, text, finishReason } = await callGemini(prompt);
     const parsed = extractJSON(text);
+
     if (parsed) {
-      // 直接回傳解析後的 JSON 字串（確保格式正確）
       return res.json({ ok: true, text: JSON.stringify(parsed) });
     }
 
-    // 解析失敗，回傳原始文字讓前端嘗試
-    console.warn(`[API] JSON 解析失敗，回傳原始文字（前 200 字）: ${text.substring(0, 200)}`);
-    res.json({ ok: true, text });
+    // JSON 解析失敗 → 回傳錯誤 + 原始預覽（幫助除錯）
+    console.error(`[API] JSON 解析失敗。模型: ${model}, 原因: ${finishReason}`);
+    console.error(`[API] 前 500 字: ${text.substring(0, 500)}`);
+    res.status(500).json({
+      ok: false,
+      error: `AI 回傳了非 JSON 內容（模型: ${model}）。請重試一次。`,
+      preview: text.substring(0, 300),
+    });
   } catch (e) {
-    console.error('[API]', e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// ── 除錯用：測試 API 是否正常 ────────────────────────────────
+// ── 測試 API 連線 ───────────────────────────────────────────
 app.get('/api/test', async (req, res) => {
-  if (!API_KEY) {
-    return res.json({ ok: false, error: '未設定 GEMINI_API_KEY', keyLength: 0 });
-  }
-
+  if (!API_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY' });
   try {
     const { model, text } = await callGemini(
-      '回傳一個簡單的 JSON：{"status":"ok","message":"連線成功"}，只要 JSON，不要其他文字。'
+      '回傳 JSON：{"status":"ok","message":"連線成功"}。只要 JSON。', 256
     );
-    
+    const parsed = extractJSON(text);
+    res.json({ ok: true, model, rawPreview: text.substring(0, 300), parsed, jsonOk: !!parsed });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ── 除錯：測試實際行程生成 ───────────────────────────────────
+app.get('/api/debug-generate', async (req, res) => {
+  if (!API_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY' });
+  try {
+    const prompt = `你是日本旅遊規劃師，用繁體中文。
+規劃大阪 2 天行程，每天 3 個活動。
+回傳純 JSON（不要 markdown）：
+{"tripTitle":"標題","overview":"摘要","advice":["建議1"],
+"packingList":[{"category":"衣物","items":["外套"]}],
+"itinerary":[{"dayNumber":1,"date":"2026-05-01","region":"大阪","theme":"主題",
+"activities":[{"time":"10:00","name":"景點","description":"描述","type":"SIGHTSEEING",
+"highlights":["亮點"],"coordinates":{"lat":34.69,"lng":135.50}}]}]}`;
+
+    const { model, text, finishReason } = await callGemini(prompt, 4096);
     const parsed = extractJSON(text);
     res.json({
-      ok: true,
+      ok: !!parsed,
       model,
+      finishReason,
       rawLength: text.length,
-      rawPreview: text.substring(0, 300),
-      parsed,
-      jsonExtractOk: !!parsed,
+      rawPreview: text.substring(0, 800),
+      parsed: parsed ? { tripTitle: parsed.tripTitle, dayCount: parsed.itinerary?.length } : null,
+      jsonOk: !!parsed,
     });
   } catch (e) {
     res.json({ ok: false, error: e.message });
@@ -152,6 +154,6 @@ app.listen(PORT, () => {
   console.log(`\n🗾  Japan Travel Planner (Gemini Free)`);
   console.log(`📡  http://localhost:${PORT}`);
   console.log(`🔑  Gemini Key: ${API_KEY ? '已設定 ✅' : '❌ 未設定'}`);
-  console.log(`📌  模型：gemini-2.5-flash → 2.0-flash → 2.5-flash-lite`);
-  console.log(`🔧  除錯：${`http://localhost:${PORT}/api/test`}\n`);
+  console.log(`📌  模型：gemini-2.5-flash（自動降級）`);
+  console.log(`🔧  測試：/api/test | 除錯：/api/debug-generate\n`);
 });
