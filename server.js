@@ -150,6 +150,70 @@ app.get('/api/debug-generate', async (req, res) => {
   }
 });
 
+// ── 即時匯率（JPY→TWD）────────────────────────────────────
+app.get('/api/rate', async (req, res) => {
+  try {
+    // 先嘗試主要來源
+    const sources = [
+      { url: 'https://open.er-api.com/v6/latest/JPY', parse: d => d.rates?.TWD },
+      { url: 'https://api.exchangerate-api.com/v4/latest/JPY', parse: d => d.rates?.TWD },
+    ];
+    for (const src of sources) {
+      try {
+        const { data } = await axios.get(src.url, { timeout: 8000 });
+        const rate = src.parse(data);
+        if (rate && rate > 0) {
+          console.log(`[rate] JPY→TWD = ${rate}`);
+          return res.json({ ok: true, rate: +rate.toFixed(6), source: src.url });
+        }
+      } catch (_) {}
+    }
+    res.json({ ok: false, rate: 0.21, error: '無法取得即時匯率，使用預設值' });
+  } catch (e) {
+    res.json({ ok: false, rate: 0.21, error: e.message });
+  }
+});
+
+// ── 附近景點推薦 ────────────────────────────────────────────
+app.post('/api/suggest', async (req, res) => {
+  if (!API_KEY) return res.status(500).json({ ok: false, error: '未設定 API KEY' });
+  try {
+    const { region, category, lat, lng, existingNames, date } = req.body;
+    const catMap = {
+      FOOD: '餐廳美食（給具體店名和推薦菜品）',
+      SIGHTSEEING: '觀光景點',
+      ACTIVITY: '體驗活動',
+      SHOPPING: '購物商店',
+    };
+    const catDesc = catMap[category] || '各類景點';
+    const nearDesc = lat && lng ? `座標 ${lat},${lng} 附近` : `${region || '日本'}地區`;
+    const excludeStr = existingNames?.length ? `排除：${existingNames.join('、')}` : '';
+
+    const prompt = `推薦 5 個${nearDesc}的${catDesc}。${excludeStr}
+日期參考：${date || '近期'}。繁體中文。
+回傳純 JSON 陣列（不要 markdown）：
+[{"name":"名稱","description":"一句描述","type":"${category}",
+"igCaption":"用IG網紅口吻介紹（有emoji）",
+"highlights":["亮點1","亮點2"],
+"coordinates":{"lat":0,"lng":0},
+"estimatedStay":"60分鐘"}]`;
+
+    const { text } = await callGemini(prompt, 4096);
+    let parsed = extractJSON(text);
+    // 可能是陣列或包在物件裡
+    if (parsed && !Array.isArray(parsed)) {
+      const arr = Object.values(parsed).find(v => Array.isArray(v));
+      if (arr) parsed = arr;
+    }
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return res.json({ ok: true, suggestions: parsed });
+    }
+    res.json({ ok: false, error: '無法解析推薦結果' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`\n🗾  Japan Travel Planner (Gemini Free)`);
   console.log(`📡  http://localhost:${PORT}`);
