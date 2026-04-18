@@ -225,6 +225,74 @@ input, select, textarea, button { font-family: var(--font); }
 .currency-rate { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--fg3); }
 .currency-rate input { border: 1px solid var(--bdr2); border-radius: 6px; padding: 4px 8px; font-size: 12px; width: 70px; font-family: var(--mono); }
 
+/* Activity Edit Controls */
+.act-del {
+  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px;
+  border-radius: 50%; border: none; background: #fef2f2; color: #dc2626;
+  font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.act-item { position: relative; }
+.act-item:hover .act-del { opacity: 1; }
+.act-stay {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;
+  font-size: 10px; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd;
+  border-radius: 6px; padding: 1px 7px; font-weight: 600;
+}
+.act-add-row {
+  padding: 8px 18px 14px; display: flex; justify-content: center;
+}
+.act-add-btn {
+  display: flex; align-items: center; gap: 6px; padding: 8px 20px;
+  border-radius: 10px; border: 2px dashed #94a3b8; background: transparent;
+  color: #64748b; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: all .15s; font-family: var(--font);
+}
+.act-add-btn:hover { border-color: #0284c7; color: #0284c7; background: #f0f9ff; }
+
+/* Suggestion Modal */
+.sug-overlay {
+  position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5);
+  backdrop-filter: blur(4px); display: flex; align-items: flex-end; justify-content: center;
+}
+.sug-panel {
+  background: var(--white); border-radius: 18px 18px 0 0; width: 100%; max-width: 560px;
+  max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 -8px 40px rgba(0,0,0,.15); animation: slideUp .3s ease;
+}
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+.sug-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--bdr);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sug-header h3 { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.sug-close { background: var(--bg); border: 1px solid var(--bdr); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.sug-tabs { display: flex; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--bdr); overflow-x: auto; }
+.sug-tab {
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;
+  cursor: pointer; border: 1px solid var(--bdr); background: var(--white); color: var(--fg3);
+  white-space: nowrap; transition: all .15s;
+}
+.sug-tab.on { background: var(--sky); color: #fff; border-color: var(--sky); }
+.sug-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.sug-card {
+  border: 1px solid var(--bdr); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+  cursor: pointer; transition: all .15s;
+}
+.sug-card:hover { border-color: var(--sky); background: var(--sky0); }
+.sug-card-name { font-size: 14px; font-weight: 700; color: var(--fg); margin-bottom: 4px; }
+.sug-card-desc { font-size: 12px; color: var(--fg3); margin-bottom: 6px; }
+.sug-card-ig { font-size: 12px; color: #6b21a8; background: #faf5ff; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; line-height: 1.5; }
+.sug-card-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.sug-card-tag { font-size: 10px; background: var(--sky0); color: #0369a1; border: 1px solid #bae6fd; border-radius: 8px; padding: 2px 8px; }
+.sug-loading { text-align: center; padding: 40px; color: var(--fg3); font-size: 13px; }
+.sug-manual { border-top: 1px solid var(--bdr); padding: 14px 20px; background: var(--bg); }
+.sug-manual-title { font-size: 11px; font-weight: 700; color: var(--fg3); margin-bottom: 8px; }
+.sug-manual-row { display: flex; gap: 6px; }
+.sug-manual-inp { flex: 1; border: 1px solid var(--bdr2); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.sug-manual-inp:focus { outline: none; border-color: var(--sky); }
+.sug-manual-btn { background: var(--sky); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-weight: 700; cursor: pointer; font-size: 13px; }
+
 /* Expense Tracker */
 .exp-fab {
   position: fixed; bottom: 24px; right: 24px; z-index: 80;
@@ -831,33 +899,39 @@ function renderTab() {
         const hasTravel = act.travelToNext?.duration && ai < day.activities.length - 1;
         const nextAct = ai < day.activities.length - 1 ? day.activities[ai + 1] : null;
         
-        // Google Maps 導航連結
+        // ── 計算建議停留時間 ──
+        let stayMin = act.estimatedStay || '';
+        if (!stayMin && act.time && nextAct?.time) {
+          const [h1,m1] = act.time.split(':').map(Number);
+          const [h2,m2] = nextAct.time.split(':').map(Number);
+          if (!isNaN(h1) && !isNaN(h2)) {
+            let diff = (h2*60+m2) - (h1*60+m1);
+            // 扣掉交通時間
+            if (act.travelToNext?.duration) {
+              const tm = parseInt(act.travelToNext.duration);
+              if (!isNaN(tm)) diff -= tm;
+            }
+            if (diff > 0 && diff < 480) stayMin = diff + '分鐘';
+          }
+        }
+        
+        // Google Maps
         let navUrl = '';
         if (nextAct?.coordinates && act.coordinates) {
           navUrl = `https://www.google.com/maps/dir/${act.coordinates.lat},${act.coordinates.lng}/${nextAct.coordinates.lat},${nextAct.coordinates.lng}`;
         }
-        
-        // Google Maps 地點連結
         const spotUrl = act.coordinates 
           ? `https://www.google.com/maps/search/?api=1&query=${act.coordinates.lat},${act.coordinates.lng}` 
           : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.name + ' Japan')}`;
         
-        // Tabelog 搜尋連結（餐廳用）— 直接帶入店名搜尋
-        const tabelogUrl = act.type === 'FOOD' 
-          ? `https://tabelog.com/rstLst/?sk=${encodeURIComponent(act.name)}` 
-          : '';
+        // Tabelog + Google 訂位
+        const tabelogUrl = act.type === 'FOOD' ? `https://tabelog.com/rstLst/?sk=${encodeURIComponent(act.name)}` : '';
+        const gReserveUrl = act.type === 'FOOD' ? `https://www.google.com/search?q=${encodeURIComponent(act.name + ' 予約 訂位')}` : '';
 
-        // Google 訂位搜尋（餐廳用）
-        const gReserveUrl = act.type === 'FOOD'
-          ? `https://www.google.com/search?q=${encodeURIComponent(act.name + ' 予約 訂位')}`
-          : '';
-
-        // 景點天氣
-        const actWx = act.weather 
-          ? `${WX[act.weather.icon]||'🌤️'} ${act.weather.temperature}` 
-          : '';
+        const actWx = act.weather ? `${WX[act.weather.icon]||'🌤️'} ${act.weather.temperature}` : '';
 
         h += `<div class="act-item">
+          <button class="act-del" onclick="deleteActivity(${di},${ai})" title="刪除此活動">✕</button>
           <div class="act-timeline">
             <span class="act-time">${act.time||''}</span>
             <div class="act-icon">${icon}</div>
@@ -865,13 +939,14 @@ function renderTab() {
           </div>
           <div class="act-content">
             <div class="act-name">
-              <a href="${spotUrl}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dashed #cbd5e1" title="在 Google Maps 查看">${esc(act.name)}</a>
+              <a href="${spotUrl}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dashed #cbd5e1" title="Google Maps">${esc(act.name)}</a>
               ${act.ticketInfo?.required ? `<span class="act-ticket">🎫 ${esc(act.ticketInfo.priceEstimate||'')}</span>` : ''}
               ${actWx ? `<span style="font-size:11px;color:#64748b;margin-left:4px">${actWx}</span>` : ''}
+              ${stayMin ? `<span class="act-stay">⏱ ${esc(stayMin)}</span>` : ''}
             </div>
             <div class="act-desc">${esc(act.description||'')}</div>`;
 
-        // ── Instagram 網紅介紹 ──
+        // IG Caption
         if (act.igCaption) {
           h += `<div style="margin:8px 0;padding:10px 14px;background:linear-gradient(135deg,#fdf2f8,#faf5ff);
             border:1px solid #f0abfc33;border-radius:12px;font-size:13px;line-height:1.7;color:#6b21a8;
@@ -885,49 +960,35 @@ function renderTab() {
           h += `<div class="act-highlights">${act.highlights.map(hl=>`<span class="act-hl">${esc(hl)}</span>`).join('')}</div>`;
         }
 
-        // ── 餐廳訂位按鈕列 ──
+        // 餐廳訂位
         if (act.type === 'FOOD') {
           h += `<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">`;
-          if (tabelogUrl) {
-            h += `<a href="${tabelogUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
-              padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;
-              background:#ea580c;color:#fff;box-shadow:0 1px 3px rgba(234,88,12,.3)">
-              🍽️ Tabelog 搜尋</a>`;
-          }
-          if (gReserveUrl) {
-            h += `<a href="${gReserveUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
-              padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;
-              background:#2563eb;color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.3)">
-              📋 Google 訂位</a>`;
-          }
-          if (act.reservation?.tips) {
-            h += `<span style="font-size:11px;color:#64748b;padding:5px 0;display:flex;align-items:center;gap:3px">
-              💡 ${esc(act.reservation.tips)}</span>`;
-          }
+          if (tabelogUrl) h += `<a href="${tabelogUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;background:#ea580c;color:#fff">🍽️ Tabelog</a>`;
+          if (gReserveUrl) h += `<a href="${gReserveUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;background:#2563eb;color:#fff">📋 Google 訂位</a>`;
+          if (act.reservation?.tips) h += `<span style="font-size:11px;color:#64748b;padding:5px 0">💡 ${esc(act.reservation.tips)}</span>`;
           h += `</div>`;
         }
 
-        // ── 交通資訊 + Google 導航 ──
+        // 交通 + 導航
         if (hasTravel) {
           const t = act.travelToNext;
-          const tIcon = t.mode === 'car' ? '🚗' : '🚄';
           h += `<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <div class="act-travel">${tIcon} <b>${esc(t.duration)}</b>`;
+            <div class="act-travel">${t.mode==='car'?'🚗':'🚄'} <b>${esc(t.duration)}</b>`;
           if (t.distance) h += ` <span style="color:var(--fg4)">(${esc(t.distance)})</span>`;
           if (t.details) h += ` <span style="color:var(--fg4)">· ${esc(t.details)}</span>`;
           h += `</div>`;
-          if (navUrl) {
-            h += `<a href="${navUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
-              padding:4px 10px;border-radius:7px;font-size:10px;font-weight:700;text-decoration:none;
-              background:#16a34a;color:#fff;box-shadow:0 1px 3px rgba(22,163,74,.3)">
-              🗺️ Google 導航</a>`;
-          }
+          if (navUrl) h += `<a href="${navUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:7px;font-size:10px;font-weight:700;text-decoration:none;background:#16a34a;color:#fff">🗺️ 導航</a>`;
           h += `</div>`;
         }
 
         h += `</div></div>`;
       });
       h += `</div>`;
+
+      // ── 新增活動按鈕 ──
+      h += `<div class="act-add-row">
+        <button class="act-add-btn" onclick="openSuggest(${di})">＋ 新增景點</button>
+      </div>`;
     }
     h += `</div>`;
   });
@@ -936,6 +997,224 @@ function renderTab() {
 
 function toggleDay(i) { openDay = openDay === i ? -1 : i; renderTab(); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ═══════════════════════════════════════════════════════════════
+// 行程編輯（新增/刪除活動）
+// ═══════════════════════════════════════════════════════════════
+function deleteActivity(dayIdx, actIdx) {
+  if (!plan?.itinerary?.[dayIdx]?.activities) return;
+  const act = plan.itinerary[dayIdx].activities[actIdx];
+  if (!confirm(`確定刪除「${act.name}」？`)) return;
+  plan.itinerary[dayIdx].activities.splice(actIdx, 1);
+  renderTab();
+}
+
+function addActivityToPlan(dayIdx, activity) {
+  if (!plan?.itinerary?.[dayIdx]) return;
+  const acts = plan.itinerary[dayIdx].activities;
+  
+  // 自動計算時間：最後一個活動時間 + 1~2 小時
+  if (!activity.time && acts.length > 0) {
+    const last = acts[acts.length - 1];
+    if (last.time) {
+      const [h, m] = last.time.split(':').map(Number);
+      let nh = h + 1 + Math.floor((m + 30) / 60);
+      let nm = (m + 30) % 60;
+      if (nh > 22) nh = 22;
+      activity.time = String(nh).padStart(2,'0') + ':' + String(nm).padStart(2,'0');
+    }
+  }
+  if (!activity.time) activity.time = '12:00';
+  if (!activity.id) activity.id = 'a-' + Date.now() + '-' + Math.random().toString(36).slice(2,5);
+  
+  acts.push(activity);
+  // 按時間排序
+  acts.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  closeSuggest();
+  renderTab();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 附近景點推薦面板
+// ═══════════════════════════════════════════════════════════════
+let sugDayIdx = -1;
+let sugCategory = 'FOOD';
+let sugData = [];
+let sugLoading = false;
+
+function openSuggest(dayIdx) {
+  sugDayIdx = dayIdx;
+  sugCategory = 'FOOD';
+  sugData = [];
+  renderSuggest();
+  document.body.style.overflow = 'hidden';
+  fetchSuggestions();
+}
+
+function closeSuggest() {
+  const el = document.getElementById('sug-modal');
+  if (el) el.remove();
+  document.body.style.overflow = '';
+}
+
+function setSugCat(cat) {
+  sugCategory = cat;
+  sugData = [];
+  renderSuggest();
+  fetchSuggestions();
+}
+
+async function fetchSuggestions() {
+  if (!plan?.itinerary?.[sugDayIdx]) return;
+  sugLoading = true;
+  renderSuggest();
+
+  const day = plan.itinerary[sugDayIdx];
+  const lastAct = day.activities?.[day.activities.length - 1];
+  const existingNames = day.activities?.map(a => a.name) || [];
+
+  try {
+    const resp = await fetch('/api/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        region: day.region,
+        category: sugCategory,
+        lat: lastAct?.coordinates?.lat,
+        lng: lastAct?.coordinates?.lng,
+        existingNames,
+        date: day.date,
+      }),
+    });
+    const data = await resp.json();
+    sugData = data.ok ? (data.suggestions || []) : [];
+  } catch (e) {
+    sugData = [];
+  }
+  sugLoading = false;
+  renderSuggest();
+}
+
+function renderSuggest() {
+  let el = document.getElementById('sug-modal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sug-modal';
+    document.body.appendChild(el);
+  }
+
+  const day = plan?.itinerary?.[sugDayIdx];
+  const cats = [
+    ['FOOD','🍱 美食'],['SIGHTSEEING','⛩️ 觀光'],['ACTIVITY','🎯 體驗'],['SHOPPING','🛍️ 購物']
+  ];
+
+  let h = `<div class="sug-overlay" onclick="closeSuggest()">
+    <div class="sug-panel" onclick="event.stopPropagation()">
+      <div class="sug-header">
+        <h3>📍 新增景點 — Day ${day?.dayNumber || ''} ${esc(day?.region||'')}</h3>
+        <button class="sug-close" onclick="closeSuggest()">✕</button>
+      </div>
+      <div class="sug-tabs">
+        ${cats.map(([k,l]) => `<div class="sug-tab ${sugCategory===k?'on':''}" onclick="setSugCat('${k}')">${l}</div>`).join('')}
+      </div>
+      <div class="sug-body">`;
+
+  if (sugLoading) {
+    h += `<div class="sug-loading">
+      <div style="font-size:28px;margin-bottom:8px">🔍</div>
+      正在搜尋附近${cats.find(c=>c[0]===sugCategory)?.[1]||'景點'}...<br>
+      <span style="font-size:11px;color:#94a3b8">AI 推薦約需 5-10 秒</span>
+    </div>`;
+  } else if (sugData.length === 0) {
+    h += `<div class="sug-loading">暫無推薦結果<br><span style="font-size:11px;color:#94a3b8">可嘗試其他分類或手動新增</span></div>`;
+  } else {
+    sugData.forEach((s, i) => {
+      const stayStr = s.estimatedStay || '';
+      h += `<div class="sug-card" onclick='pickSuggestion(${i})'>
+        <div class="sug-card-name">${esc(s.name)} ${stayStr ? `<span style="font-size:10px;color:#0369a1;background:#e0f2fe;border-radius:6px;padding:1px 6px;margin-left:4px">⏱${esc(stayStr)}</span>` : ''}</div>
+        <div class="sug-card-desc">${esc(s.description||'')}</div>
+        ${s.igCaption ? `<div class="sug-card-ig">📸 ${esc(s.igCaption)}</div>` : ''}
+        <div class="sug-card-meta">
+          ${(s.highlights||[]).map(hl=>`<span class="sug-card-tag">${esc(hl)}</span>`).join('')}
+        </div>
+      </div>`;
+    });
+  }
+
+  h += `</div>
+      <!-- 手動新增 -->
+      <div class="sug-manual">
+        <div class="sug-manual-title">✏️ 手動新增</div>
+        <div class="sug-manual-row">
+          <input class="sug-manual-inp" id="sug-manual-time" type="time" style="width:90px;flex:none" value="12:00">
+          <input class="sug-manual-inp" id="sug-manual-name" placeholder="景點名稱">
+          <select class="sug-manual-inp" id="sug-manual-type" style="width:80px;flex:none">
+            ${cats.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}
+          </select>
+          <button class="sug-manual-btn" onclick="manualAdd()">新增</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  el.innerHTML = h;
+}
+
+function pickSuggestion(idx) {
+  const s = sugData[idx];
+  if (!s) return;
+  addActivityToPlan(sugDayIdx, {
+    name: s.name,
+    description: s.description || '',
+    type: s.type || sugCategory,
+    igCaption: s.igCaption || '',
+    highlights: s.highlights || [],
+    coordinates: s.coordinates || null,
+    estimatedStay: s.estimatedStay || '',
+    ticketInfo: { required: false, priceEstimate: '—', tips: '' },
+    reservation: s.type === 'FOOD' || sugCategory === 'FOOD' ? { needed: true, tips: '建議透過 Tabelog 預約' } : { needed: false },
+  });
+}
+
+function manualAdd() {
+  const time = document.getElementById('sug-manual-time')?.value || '12:00';
+  const name = document.getElementById('sug-manual-name')?.value?.trim();
+  const type = document.getElementById('sug-manual-type')?.value || 'SIGHTSEEING';
+  if (!name) { alert('請輸入景點名稱'); return; }
+  addActivityToPlan(sugDayIdx, {
+    time,
+    name,
+    description: '',
+    type,
+    highlights: [],
+    ticketInfo: { required: false, priceEstimate: '—' },
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 自動取得即時匯率
+// ═══════════════════════════════════════════════════════════════
+let liveRate = 0.21;
+
+async function fetchLiveRate() {
+  try {
+    const resp = await fetch('/api/rate');
+    const data = await resp.json();
+    if (data.ok && data.rate > 0) {
+      liveRate = data.rate;
+      // 更新記帳面板匯率
+      const rateEl = document.getElementById('exp-rate');
+      if (rateEl) rateEl.value = liveRate;
+      // 更新匯率小工具
+      const curRate = document.getElementById('cur-rate');
+      if (curRate) curRate.value = liveRate;
+      console.log(`[匯率] JPY→TWD = ${liveRate}`);
+    }
+  } catch (_) {}
+}
+
+// 頁面載入時自動取匯率
+fetchLiveRate();
 
 // ═══════════════════════════════════════════════════════════════
 // 記帳功能
