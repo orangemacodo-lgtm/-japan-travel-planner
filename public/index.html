@@ -530,7 +530,7 @@ travelToNext合理交通、確保JSON完整合法`;
       body: JSON.stringify({ prompt }),
     });
     const data = await resp.json();
-    if (!data.ok) throw new Error(data.error);
+    if (!data.ok) throw new Error(data.error + (data.preview ? '\n\n預覽: ' + data.preview : ''));
 
     // 伺服器已嘗試解析 JSON，這裡做最終解析
     let parsed = null;
@@ -552,8 +552,8 @@ travelToNext合理交通、確保JSON完整合法`;
     }
     
     if (!parsed) {
-      console.error('AI 原始回應:', txt.substring(0, 500));
-      throw new Error('AI 回應格式錯誤，請重試（已記錄到 Console）');
+      console.error('AI 原始回應:', txt.substring(0, 1000));
+      throw new Error('AI 回應格式錯誤，請重試');
     }
     
     plan = parsed;
@@ -561,7 +561,8 @@ travelToNext合理交通、確保JSON完整合法`;
     renderResult();
     showResult();
   } catch (err) {
-    document.getElementById('error-box').innerHTML = `<span style="font-size:18px">⚠️</span><div><strong>生成失敗：</strong>${err.message}</div>`;
+    const msg = err.message || '未知錯誤';
+    document.getElementById('error-box').innerHTML = `<span style="font-size:18px">⚠️</span><div><strong>生成失敗：</strong><span style="white-space:pre-wrap">${esc(msg)}</span></div>`;
     document.getElementById('error-box').style.display = 'flex';
   } finally {
     clearInterval(msgTimer);
