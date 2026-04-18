@@ -496,7 +496,7 @@ async function generate() {
   const regLabel = REGIONS[region] || region;
   const isCar = transport === 'car';
 
-  const prompt = `你是專業日本旅遊規劃師。用繁體中文規劃。
+  const prompt = `你是專業日本旅遊規劃師 + Instagram 旅遊網紅。用繁體中文規劃。
 
 旅遊資訊：
 - 區域：${regLabel}
@@ -512,16 +512,27 @@ ${requests?'- 特殊需求：'+requests:''}
 {"tripTitle":"標題","overview":"2句摘要","advice":["建議1","建議2","建議3"],
 "packingList":[{"category":"衣物","items":["item1","item2"]}],
 "itinerary":[{"dayNumber":1,"date":"${startDate}","region":"地區","theme":"主題",
-"weather":{"condition":"天氣","temperature":"5~12°C","icon":"sunny"},
-"activities":[{"time":"14:00","name":"景點","description":"10字內描述",
+"weather":{"condition":"天氣描述","temperature":"15°C~22°C","icon":"sunny"},
+"activities":[{"time":"14:00","name":"景點名","description":"簡短描述",
+"igCaption":"用Instagram網紅口吻寫1-2句吸引人的介紹，要有emoji，像是：天啊這裡也太美了吧！🌸 隨便拍都是明信片等級的風景～✨",
 "highlights":["亮點1","亮點2"],"type":"SIGHTSEEING",
-"coordinates":{"lat":34.69,"lng":135.50},
+"coordinates":{"lat":34.6937,"lng":135.5023},
+"weather":{"condition":"晴天","temperature":"18°C","icon":"sunny"},
 "ticketInfo":{"required":false,"priceEstimate":"免費","tips":""},
-"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km","details":"說明"}}]}]}
+"reservation":{"needed":false,"url":"","tips":""},
+"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km","details":"路線說明"}}]}]}
 
-規則：每天5-7活動含三餐、第一天從${arrTime}開始、最後天${depTime}前結束、
-type只能FOOD/SIGHTSEEING/ACTIVITY/HOTEL、要真實coordinates、餐廳給具體店名、
-travelToNext合理交通、確保JSON完整合法`;
+規則：
+1. 每天5-7活動含早午晚餐
+2. 第一天從${arrTime}開始，最後天${depTime}前結束
+3. type只能FOOD/SIGHTSEEING/ACTIVITY/HOTEL
+4. 每個活動都要真實coordinates（緯經度）
+5. 每個活動都要weather欄位（當地該季節天氣）
+6. igCaption要用網紅口吻、有emoji、讓人想去
+7. 餐廳（type=FOOD）的reservation欄位：needed設true，tips寫訂位建議（如「建議透過Tabelog預約」「可現場排隊約20分」）
+8. 餐廳要給具體店名和推薦菜品
+9. travelToNext合理交通資訊
+10. 確保JSON完整合法，不要截斷`;
 
   try {
     const resp = await fetch('/api/generate', {
@@ -682,6 +693,34 @@ function renderTab() {
       day.activities.forEach((act, ai) => {
         const icon = ICONS[act.type] || '📍';
         const hasTravel = act.travelToNext?.duration && ai < day.activities.length - 1;
+        const nextAct = ai < day.activities.length - 1 ? day.activities[ai + 1] : null;
+        
+        // Google Maps 導航連結
+        let navUrl = '';
+        if (nextAct?.coordinates && act.coordinates) {
+          navUrl = `https://www.google.com/maps/dir/${act.coordinates.lat},${act.coordinates.lng}/${nextAct.coordinates.lat},${nextAct.coordinates.lng}`;
+        }
+        
+        // Google Maps 地點連結
+        const spotUrl = act.coordinates 
+          ? `https://www.google.com/maps/search/?api=1&query=${act.coordinates.lat},${act.coordinates.lng}` 
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.name + ' Japan')}`;
+        
+        // Tabelog 搜尋連結（餐廳用）
+        const tabelogUrl = act.type === 'FOOD' 
+          ? `https://tabelog.com/rstLst/?vs=1&sa=&sk=${encodeURIComponent(act.name)}&lid=hdr_navi_search&Cat=&LstCat=&LstCatD=&LstCatSD=&LstCatTP=&LstSitu=&LstCos498=&LstCos=&LstRange=&LstKind=&svd=&svt=&svps=&svpe=` 
+          : '';
+
+        // Google 訂位搜尋（餐廳用）
+        const gReserveUrl = act.type === 'FOOD'
+          ? `https://www.google.com/search?q=${encodeURIComponent(act.name + ' 予約 訂位')}`
+          : '';
+
+        // 景點天氣
+        const actWx = act.weather 
+          ? `${WX[act.weather.icon]||'🌤️'} ${act.weather.temperature}` 
+          : '';
+
         h += `<div class="act-item">
           <div class="act-timeline">
             <span class="act-time">${act.time||''}</span>
@@ -689,21 +728,67 @@ function renderTab() {
             ${ai < day.activities.length - 1 ? '<div class="act-line"></div>' : ''}
           </div>
           <div class="act-content">
-            <div class="act-name">${esc(act.name)}
+            <div class="act-name">
+              <a href="${spotUrl}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dashed #cbd5e1" title="在 Google Maps 查看">${esc(act.name)}</a>
               ${act.ticketInfo?.required ? `<span class="act-ticket">🎫 ${esc(act.ticketInfo.priceEstimate||'')}</span>` : ''}
+              ${actWx ? `<span style="font-size:11px;color:#64748b;margin-left:4px">${actWx}</span>` : ''}
             </div>
             <div class="act-desc">${esc(act.description||'')}</div>`;
+
+        // ── Instagram 網紅介紹 ──
+        if (act.igCaption) {
+          h += `<div style="margin:8px 0;padding:10px 14px;background:linear-gradient(135deg,#fdf2f8,#faf5ff);
+            border:1px solid #f0abfc33;border-radius:12px;font-size:13px;line-height:1.7;color:#6b21a8;
+            position:relative;overflow:hidden">
+            <div style="position:absolute;top:6px;right:10px;font-size:10px;color:#c084fc;font-weight:700">📸 IG</div>
+            ${esc(act.igCaption)}
+          </div>`;
+        }
+
         if (act.highlights?.length) {
           h += `<div class="act-highlights">${act.highlights.map(hl=>`<span class="act-hl">${esc(hl)}</span>`).join('')}</div>`;
         }
+
+        // ── 餐廳訂位按鈕列 ──
+        if (act.type === 'FOOD') {
+          h += `<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">`;
+          if (tabelogUrl) {
+            h += `<a href="${tabelogUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
+              padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;
+              background:#ea580c;color:#fff;box-shadow:0 1px 3px rgba(234,88,12,.3)">
+              🍽️ Tabelog 搜尋</a>`;
+          }
+          if (gReserveUrl) {
+            h += `<a href="${gReserveUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
+              padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;text-decoration:none;
+              background:#2563eb;color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.3)">
+              📋 Google 訂位</a>`;
+          }
+          if (act.reservation?.tips) {
+            h += `<span style="font-size:11px;color:#64748b;padding:5px 0;display:flex;align-items:center;gap:3px">
+              💡 ${esc(act.reservation.tips)}</span>`;
+          }
+          h += `</div>`;
+        }
+
+        // ── 交通資訊 + Google 導航 ──
         if (hasTravel) {
           const t = act.travelToNext;
           const tIcon = t.mode === 'car' ? '🚗' : '🚄';
-          h += `<div class="act-travel">${tIcon} <b>${esc(t.duration)}</b>`;
+          h += `<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div class="act-travel">${tIcon} <b>${esc(t.duration)}</b>`;
           if (t.distance) h += ` <span style="color:var(--fg4)">(${esc(t.distance)})</span>`;
           if (t.details) h += ` <span style="color:var(--fg4)">· ${esc(t.details)}</span>`;
           h += `</div>`;
+          if (navUrl) {
+            h += `<a href="${navUrl}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;
+              padding:4px 10px;border-radius:7px;font-size:10px;font-weight:700;text-decoration:none;
+              background:#16a34a;color:#fff;box-shadow:0 1px 3px rgba(22,163,74,.3)">
+              🗺️ Google 導航</a>`;
+          }
+          h += `</div>`;
         }
+
         h += `</div></div>`;
       });
       h += `</div>`;
