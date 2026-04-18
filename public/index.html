@@ -225,6 +225,85 @@ input, select, textarea, button { font-family: var(--font); }
 .currency-rate { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11px; color: var(--fg3); }
 .currency-rate input { border: 1px solid var(--bdr2); border-radius: 6px; padding: 4px 8px; font-size: 12px; width: 70px; font-family: var(--mono); }
 
+/* Expense Tracker */
+.exp-fab {
+  position: fixed; bottom: 24px; right: 24px; z-index: 80;
+  width: 56px; height: 56px; border-radius: 50%; border: none;
+  background: linear-gradient(135deg, #059669, #10b981); color: #fff;
+  font-size: 24px; cursor: pointer; box-shadow: 0 4px 20px rgba(5,150,105,.4);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .2s, box-shadow .2s;
+}
+.exp-fab:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(5,150,105,.5); }
+.exp-fab:active { transform: scale(.95); }
+.exp-fab-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px;
+  border-radius: 10px; background: #ef4444; color: #fff; font-size: 10px;
+  font-weight: 800; display: flex; align-items: center; justify-content: center;
+  padding: 0 5px; box-shadow: 0 2px 6px rgba(239,68,68,.4);
+}
+.exp-overlay {
+  position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.5);
+  backdrop-filter: blur(4px); opacity: 0; pointer-events: none; transition: opacity .25s;
+}
+.exp-overlay.open { opacity: 1; pointer-events: all; }
+.exp-panel {
+  position: fixed; bottom: 0; right: 0; z-index: 100;
+  width: min(420px, 100vw); max-height: 85vh;
+  background: var(--white); border-radius: 18px 18px 0 0; border: 1px solid var(--bdr);
+  box-shadow: 0 -8px 40px rgba(0,0,0,.12); overflow: hidden;
+  transform: translateY(100%); transition: transform .3s cubic-bezier(.32,1.1,.6,1);
+  display: flex; flex-direction: column;
+}
+.exp-panel.open { transform: translateY(0); }
+.exp-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--bdr);
+  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, #059669, #10b981); color: #fff;
+}
+.exp-header h3 { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.exp-close { background: rgba(255,255,255,.2); border: none; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; }
+.exp-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.exp-total {
+  background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 1px solid #bbf7d0;
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 16px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.exp-total-label { font-size: 12px; color: #166534; font-weight: 600; }
+.exp-total-val { font-size: 20px; font-weight: 900; color: #166534; font-family: var(--mono); }
+.exp-total-sub { font-size: 12px; color: #16a34a; font-family: var(--mono); }
+.exp-form { background: var(--bg); border: 1px solid var(--bdr); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+.exp-form-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.exp-form-row:last-child { margin-bottom: 0; }
+.exp-inp { flex: 1; border: 1px solid var(--bdr2); border-radius: 8px; padding: 8px 10px; font-size: 14px; background: var(--white); }
+.exp-inp:focus { outline: none; border-color: var(--grn); box-shadow: 0 0 0 3px rgba(5,150,105,.1); }
+.exp-sel { border: 1px solid var(--bdr2); border-radius: 8px; padding: 8px; font-size: 13px; background: var(--white); min-width: 80px; }
+.exp-add-btn {
+  background: #059669; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 16px; font-size: 20px; font-weight: 900; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.exp-add-btn:hover { background: #047857; }
+.exp-add-btn:disabled { opacity: .4; cursor: not-allowed; }
+.exp-list { display: flex; flex-direction: column; gap: 6px; }
+.exp-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: 10px; border: 1px solid var(--bdr);
+  background: var(--white); transition: background .1s;
+}
+.exp-item:hover { background: var(--bg); }
+.exp-cat {
+  font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+  display: inline-block; margin-right: 8px;
+}
+.exp-del {
+  background: none; border: none; color: var(--fg4); cursor: pointer;
+  font-size: 14px; padding: 4px; border-radius: 6px; opacity: 0; transition: opacity .15s;
+}
+.exp-item:hover .exp-del { opacity: 1; }
+.exp-del:hover { color: var(--red); background: #fef2f2; }
+.exp-empty { text-align: center; padding: 24px; color: var(--fg4); font-size: 13px; }
+
 /* Footer */
 .footer { border-top: 1px solid var(--bdr); background: var(--white); margin-top: 48px; padding: 20px 16px; text-align: center; font-size: 11px; color: var(--fg4); }
 
@@ -366,6 +445,63 @@ input, select, textarea, button { font-family: var(--font); }
 </div>
 
 <footer class="footer">Japan Travel Planner · AI 生成行程僅供參考，請依實際狀況調整</footer>
+
+<!-- 記帳浮動按鈕 -->
+<button class="exp-fab" onclick="toggleExpPanel()" id="exp-fab" title="記帳小幫手">
+  💰
+  <span class="exp-fab-badge" id="exp-badge" style="display:none">0</span>
+</button>
+
+<!-- 記帳面板 -->
+<div class="exp-overlay" id="exp-overlay" onclick="toggleExpPanel()"></div>
+<div class="exp-panel" id="exp-panel">
+  <div class="exp-header">
+    <h3>💰 旅遊記帳</h3>
+    <button class="exp-close" onclick="toggleExpPanel()">✕</button>
+  </div>
+  <div class="exp-body">
+    <!-- 總計 -->
+    <div class="exp-total">
+      <div>
+        <div class="exp-total-label">旅行總花費</div>
+        <div class="exp-total-val" id="exp-total-jpy">¥0</div>
+      </div>
+      <div style="text-align:right">
+        <div class="exp-total-label">換算台幣</div>
+        <div class="exp-total-sub" id="exp-total-twd">≈ NT$0</div>
+        <div style="margin-top:4px;display:flex;align-items:center;gap:4px;justify-content:flex-end">
+          <span style="font-size:10px;color:#64748b">匯率</span>
+          <input type="number" step="0.001" value="0.21" id="exp-rate" oninput="renderExpenses()"
+            style="width:55px;border:1px solid #bbf7d0;border-radius:5px;padding:2px 5px;font-size:11px;font-family:var(--mono);text-align:center">
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增表單 -->
+    <div class="exp-form">
+      <div class="exp-form-row">
+        <input type="number" class="exp-inp" id="exp-amount" placeholder="金額（日幣）" min="0"
+          onkeydown="if(event.key==='Enter')addExpense()">
+        <select class="exp-sel" id="exp-cat">
+          <option value="food">🍱 餐飲</option>
+          <option value="transport">🚄 交通</option>
+          <option value="shopping">🛍️ 購物</option>
+          <option value="hotel">🏨 住宿</option>
+          <option value="ticket">🎫 門票</option>
+          <option value="other">📦 其他</option>
+        </select>
+      </div>
+      <div class="exp-form-row">
+        <input type="text" class="exp-inp" id="exp-note" placeholder="備註（例如：一蘭拉麵）"
+          onkeydown="if(event.key==='Enter')addExpense()">
+        <button class="exp-add-btn" onclick="addExpense()" id="exp-add-btn">＋</button>
+      </div>
+    </div>
+
+    <!-- 清單 -->
+    <div class="exp-list" id="exp-list"></div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -706,9 +842,9 @@ function renderTab() {
           ? `https://www.google.com/maps/search/?api=1&query=${act.coordinates.lat},${act.coordinates.lng}` 
           : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.name + ' Japan')}`;
         
-        // Tabelog 搜尋連結（餐廳用）
+        // Tabelog 搜尋連結（餐廳用）— 直接帶入店名搜尋
         const tabelogUrl = act.type === 'FOOD' 
-          ? `https://tabelog.com/rstLst/?vs=1&sa=&sk=${encodeURIComponent(act.name)}&lid=hdr_navi_search&Cat=&LstCat=&LstCatD=&LstCatSD=&LstCatTP=&LstSitu=&LstCos498=&LstCos=&LstRange=&LstKind=&svd=&svt=&svps=&svpe=` 
+          ? `https://tabelog.com/rstLst/?sk=${encodeURIComponent(act.name)}` 
           : '';
 
         // Google 訂位搜尋（餐廳用）
@@ -800,6 +936,155 @@ function renderTab() {
 
 function toggleDay(i) { openDay = openDay === i ? -1 : i; renderTab(); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ═══════════════════════════════════════════════════════════════
+// 記帳功能
+// ═══════════════════════════════════════════════════════════════
+const CAT_META = {
+  food:      { label: '餐飲', emoji: '🍱', bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+  transport: { label: '交通', emoji: '🚄', bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+  shopping:  { label: '購物', emoji: '🛍️', bg: '#fdf2f8', color: '#be185d', border: '#fbcfe8' },
+  hotel:     { label: '住宿', emoji: '🏨', bg: '#f5f3ff', color: '#6d28d9', border: '#ddd6fe' },
+  ticket:    { label: '門票', emoji: '🎫', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+  other:     { label: '其他', emoji: '📦', bg: '#f8fafc', color: '#475569', border: '#e2e8f0' },
+};
+
+let expenses = [];
+let expOpen = false;
+
+// 載入 localStorage
+(function loadExpenses() {
+  try {
+    const saved = localStorage.getItem('jp_expenses');
+    if (saved) expenses = JSON.parse(saved);
+  } catch(_) {}
+  updateBadge();
+})();
+
+function saveExpenses() {
+  localStorage.setItem('jp_expenses', JSON.stringify(expenses));
+  updateBadge();
+}
+
+function updateBadge() {
+  const badge = document.getElementById('exp-badge');
+  if (expenses.length > 0) {
+    badge.style.display = 'flex';
+    badge.textContent = expenses.length;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function toggleExpPanel() {
+  expOpen = !expOpen;
+  document.getElementById('exp-panel').classList.toggle('open', expOpen);
+  document.getElementById('exp-overlay').classList.toggle('open', expOpen);
+  if (expOpen) renderExpenses();
+}
+
+function addExpense() {
+  const amtEl = document.getElementById('exp-amount');
+  const catEl = document.getElementById('exp-cat');
+  const noteEl = document.getElementById('exp-note');
+  const amt = parseInt(amtEl.value);
+  if (!amt || amt <= 0) return;
+
+  const rate = parseFloat(document.getElementById('exp-rate').value) || 0.21;
+
+  expenses.unshift({
+    id: Date.now() + '-' + Math.random().toString(36).slice(2,6),
+    date: Date.now(),
+    jpy: amt,
+    twd: Math.round(amt * rate),
+    cat: catEl.value,
+    note: noteEl.value || CAT_META[catEl.value]?.label || '支出',
+  });
+
+  saveExpenses();
+  renderExpenses();
+
+  // 清空表單
+  amtEl.value = '';
+  noteEl.value = '';
+  amtEl.focus();
+}
+
+function deleteExpense(id) {
+  expenses = expenses.filter(e => e.id !== id);
+  saveExpenses();
+  renderExpenses();
+}
+
+function clearAllExpenses() {
+  if (!confirm('確定要清除所有記帳紀錄嗎？')) return;
+  expenses = [];
+  saveExpenses();
+  renderExpenses();
+}
+
+function renderExpenses() {
+  const rate = parseFloat(document.getElementById('exp-rate').value) || 0.21;
+  const totalJPY = expenses.reduce((a, e) => a + e.jpy, 0);
+  const totalTWD = Math.round(totalJPY * rate);
+
+  document.getElementById('exp-total-jpy').textContent = '¥' + totalJPY.toLocaleString();
+  document.getElementById('exp-total-twd').textContent = '≈ NT$' + totalTWD.toLocaleString();
+
+  const listEl = document.getElementById('exp-list');
+  if (expenses.length === 0) {
+    listEl.innerHTML = '<div class="exp-empty">還沒有記帳紀錄 📝<br>開始記錄旅行花費吧！</div>';
+    return;
+  }
+
+  // 分類統計
+  const catTotals = {};
+  expenses.forEach(e => { catTotals[e.cat] = (catTotals[e.cat] || 0) + e.jpy; });
+
+  let h = '';
+
+  // 分類統計條
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+  Object.entries(catTotals).sort((a,b) => b[1] - a[1]).forEach(([cat, total]) => {
+    const m = CAT_META[cat] || CAT_META.other;
+    const pct = totalJPY > 0 ? Math.round(total / totalJPY * 100) : 0;
+    h += `<div style="background:${m.bg};border:1px solid ${m.border};border-radius:8px;padding:5px 10px;font-size:11px;color:${m.color};font-weight:600">
+      ${m.emoji} ${m.label} ¥${total.toLocaleString()} (${pct}%)
+    </div>`;
+  });
+  h += '</div>';
+
+  // 明細列表
+  expenses.forEach(e => {
+    const m = CAT_META[e.cat] || CAT_META.other;
+    const dateStr = new Date(e.date).toLocaleDateString('zh-TW', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+    h += `<div class="exp-item">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+        <span class="exp-cat" style="background:${m.bg};color:${m.color};border:1px solid ${m.border}">${m.emoji} ${m.label}</span>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.note)}</div>
+          <div style="font-size:10px;color:var(--fg4)">${dateStr}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        <div style="text-align:right">
+          <div style="font-size:14px;font-weight:800;color:var(--fg);font-family:var(--mono)">¥${e.jpy.toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--fg4);font-family:var(--mono)">NT$${Math.round(e.jpy * rate).toLocaleString()}</div>
+        </div>
+        <button class="exp-del" onclick="deleteExpense('${e.id}')" title="刪除">🗑️</button>
+      </div>
+    </div>`;
+  });
+
+  // 清除全部按鈕
+  if (expenses.length >= 2) {
+    h += `<button onclick="clearAllExpenses()" style="margin-top:12px;width:100%;padding:8px;border-radius:8px;
+      border:1px solid #fecaca;background:#fef2f2;color:#dc2626;font-size:12px;font-weight:600;cursor:pointer">
+      🗑️ 清除全部紀錄</button>`;
+  }
+
+  listEl.innerHTML = h;
+}
 </script>
 </body>
 </html>
