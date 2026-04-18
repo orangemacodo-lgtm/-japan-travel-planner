@@ -700,43 +700,31 @@ async function generate() {
   const regLabel = REGIONS[region] || region;
   const isCar = transport === 'car';
 
-  const prompt = `你是專業日本旅遊規劃師 + Instagram 旅遊網紅。用繁體中文規劃。
+  // ── 依天數調整 prompt 複雜度 ──
+  const isLong = days > 4;
+  const actPerDay = isLong ? '3-4（午餐+1景點+晚餐+1景點）' : '5-7活動含三餐';
+  const descLen = isLong ? '5字內' : '10字內';
+  const igLen = isLong ? '10字內有emoji' : '1-2句有emoji像網紅';
 
-旅遊資訊：
-- 區域：${regLabel}
-- 日期：${startDate} ~ ${endDate}（${days}天）
-- 抵達：${arrTime}，離開：${depTime}
-- 成員：${adults}大人、${kids}小孩（${members}）
-- 交通：${isCar?'租車自駕':'大眾運輸'}
-- 興趣：${[...selectedInterests].join('、')}
-- 日本經驗：${beenBefore?'多次（推薦深度）':'初次（推薦經典）'}
-${requests?'- 特殊需求：'+requests:''}
+  const prompt = `你是日本旅遊規劃師+IG網紅。繁體中文。
 
-回傳純JSON（不要markdown）：
-{"tripTitle":"標題","overview":"2句摘要","advice":["建議1","建議2","建議3"],
-"packingList":[{"category":"衣物","items":["item1","item2"]}],
+資訊：區域${regLabel}、${startDate}~${endDate}（${days}天）、抵達${arrTime}離開${depTime}、${adults}大${kids}小（${members}）、${isCar?'自駕':'大眾運輸'}、興趣：${[...selectedInterests].join('/')}${beenBefore?'、深度旅':''}
+${requests?'需求：'+requests:''}
+
+回傳純JSON：
+{"tripTitle":"標題","overview":"摘要",
+"advice":["建議1","建議2"],
+"packingList":[{"category":"類","items":["物品"]}],
 "itinerary":[{"dayNumber":1,"date":"${startDate}","region":"地區","theme":"主題",
-"weather":{"condition":"天氣描述","temperature":"15°C~22°C","icon":"sunny"},
-"activities":[{"time":"14:00","name":"景點名","description":"簡短描述",
-"igCaption":"用Instagram網紅口吻寫1-2句吸引人的介紹，要有emoji，像是：天啊這裡也太美了吧！🌸 隨便拍都是明信片等級的風景～✨",
-"highlights":["亮點1","亮點2"],"type":"SIGHTSEEING",
-"coordinates":{"lat":34.6937,"lng":135.5023},
-"weather":{"condition":"晴天","temperature":"18°C","icon":"sunny"},
-"ticketInfo":{"required":false,"priceEstimate":"免費","tips":""},
-"reservation":{"needed":false,"url":"","tips":""},
-"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km","details":"路線說明"}}]}]}
+"weather":{"condition":"天氣","temperature":"15~22°C","icon":"sunny"},
+"activities":[{"time":"14:00","name":"景點名","description":"${descLen}描述",
+"igCaption":"${igLen}","highlights":["亮點"],"type":"SIGHTSEEING",
+"coordinates":{"lat":34.69,"lng":135.50},
+"ticketInfo":{"required":false,"priceEstimate":"免費"},
+"reservation":{"needed":false,"tips":""},
+"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km"}}]}]}
 
-規則：
-1. 每天5-7活動含早午晚餐
-2. 第一天從${arrTime}開始，最後天${depTime}前結束
-3. type只能FOOD/SIGHTSEEING/ACTIVITY/HOTEL
-4. 每個活動都要真實coordinates（緯經度）
-5. 每個活動都要weather欄位（當地該季節天氣）
-6. igCaption要用網紅口吻、有emoji、讓人想去
-7. 餐廳（type=FOOD）的reservation欄位：needed設true，tips寫訂位建議（如「建議透過Tabelog預約」「可現場排隊約20分」）
-8. 餐廳要給具體店名和推薦菜品
-9. travelToNext合理交通資訊
-10. 確保JSON完整合法，不要截斷`;
+規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、真實coordinates、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷`;
 
   try {
     const resp = await fetch('/api/generate', {
@@ -744,6 +732,13 @@ ${requests?'- 特殊需求：'+requests:''}
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });
+
+    // ── 防止 Render 超時回傳 HTML 錯誤頁面 ──
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('json')) {
+      throw new Error('伺服器回應逾時（Render 免費版限 30 秒）。\n建議：縮短天數至 3-4 天再試。');
+    }
+
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error + (data.preview ? '\n\n預覽: ' + data.preview : ''));
 
@@ -770,9 +765,17 @@ ${requests?'- 特殊需求：'+requests:''}
       console.error('AI 原始回應:', txt.substring(0, 1000));
       throw new Error('AI 回應格式錯誤，請重試');
     }
+
+    // ── 驗證行程有實際內容 ──
+    if (!parsed.itinerary || !Array.isArray(parsed.itinerary) || parsed.itinerary.length === 0) {
+      console.error('AI 回傳 JSON 但缺少行程:', Object.keys(parsed));
+      throw new Error('AI 回傳的行程不完整（可能被截斷）。\n建議：縮短天數至 3-4 天再試。');
+    }
     
     plan = parsed;
     plan.transportationMode = transport;
+    // 用表單天數作為備用
+    plan._formDays = days;
     renderResult();
     showResult();
   } catch (err) {
@@ -813,7 +816,7 @@ function renderResult() {
         </div>
       </div>
       <div class="result-tags">
-        <span class="result-tag">📅 ${plan.itinerary?.length || 0} 天</span>
+        <span class="result-tag">📅 ${plan.itinerary?.length || plan._formDays || '?'} 天</span>
         <span class="result-tag">📍 ${esc(regions)}</span>
         <span class="result-tag">${transLabel}</span>
       </div>
