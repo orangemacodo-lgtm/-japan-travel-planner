@@ -548,10 +548,11 @@ input, select, textarea, button { font-family: var(--font); }
       <div style="text-align:right">
         <div class="exp-total-label">換算台幣</div>
         <div class="exp-total-sub" id="exp-total-twd">≈ NT$0</div>
-        <div style="margin-top:4px;display:flex;align-items:center;gap:4px;justify-content:flex-end">
+        <div style="margin-top:4px;display:flex;align-items:center;gap:4px;justify-content:flex-end;flex-wrap:wrap">
           <span style="font-size:10px;color:#64748b">匯率</span>
           <input type="number" step="0.001" value="0.21" id="exp-rate" oninput="renderExpenses()"
             style="width:55px;border:1px solid #bbf7d0;border-radius:5px;padding:2px 5px;font-size:11px;font-family:var(--mono);text-align:center">
+          <button onclick="refreshRateExp(this)" style="background:#059669;color:#fff;border:none;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">🔄 最新</button>
         </div>
       </div>
     </div>
@@ -841,7 +842,9 @@ function renderResult() {
           <div class="currency-arrow">→</div>
           <div class="currency-col"><div class="currency-label">台幣 TWD</div><div class="currency-result" id="cur-twd">NT$ 2,100</div></div>
         </div>
-        <div class="currency-rate">匯率 <input type="number" step="0.001" value="0.21" id="cur-rate" oninput="calcCurrency()"> TWD/JPY</div>
+        <div class="currency-rate">匯率 <input type="number" step="0.001" value="0.21" id="cur-rate" oninput="calcCurrency()"> TWD/JPY
+          <button onclick="refreshRate(this)" style="background:#0284c7;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:4px;white-space:nowrap">🔄 查詢最新</button>
+        </div>
       </div>
     </div>
 
@@ -865,6 +868,33 @@ function calcCurrency() {
   const jpy = parseFloat(document.getElementById('cur-jpy').value) || 0;
   const rate = parseFloat(document.getElementById('cur-rate').value) || 0.21;
   document.getElementById('cur-twd').textContent = 'NT$ ' + Math.round(jpy * rate).toLocaleString();
+}
+
+async function refreshRate(btn) {
+  const origText = btn.textContent;
+  btn.textContent = '⏳ 查詢中...';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/rate');
+    const data = await resp.json();
+    if (data.ok && data.rate > 0) {
+      document.getElementById('cur-rate').value = data.rate;
+      calcCurrency();
+      // 同步更新記帳面板匯率
+      const expRate = document.getElementById('exp-rate');
+      if (expRate) { expRate.value = data.rate; renderExpenses(); }
+      btn.textContent = '✅ 已更新';
+      btn.style.background = '#16a34a';
+      setTimeout(() => { btn.textContent = origText; btn.style.background = '#0284c7'; }, 2000);
+    } else {
+      btn.textContent = '❌ 失敗';
+      setTimeout(() => { btn.textContent = origText; }, 2000);
+    }
+  } catch (e) {
+    btn.textContent = '❌ 失敗';
+    setTimeout(() => { btn.textContent = origText; }, 2000);
+  }
+  btn.disabled = false;
 }
 
 function renderTab() {
@@ -1300,6 +1330,32 @@ async function fetchLiveRate() {
 
 // 頁面載入時自動取匯率
 fetchLiveRate();
+
+// 記帳面板的匯率更新按鈕
+async function refreshRateExp(btn) {
+  const orig = btn.textContent;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  try {
+    const resp = await fetch('/api/rate');
+    const data = await resp.json();
+    if (data.ok && data.rate > 0) {
+      document.getElementById('exp-rate').value = data.rate;
+      renderExpenses();
+      const curRate = document.getElementById('cur-rate');
+      if (curRate) { curRate.value = data.rate; calcCurrency(); }
+      btn.textContent = '✅';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    } else {
+      btn.textContent = '❌';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  } catch (_) {
+    btn.textContent = '❌';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }
+  btn.disabled = false;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 記帳功能
