@@ -232,8 +232,19 @@ input, select, textarea, button { font-family: var(--font); }
   font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s;
   display: flex; align-items: center; justify-content: center;
 }
+.act-move {
+  position: absolute; top: 6px; right: 34px; display: flex; gap: 2px;
+  opacity: 0; transition: opacity .15s;
+}
+.act-move-btn {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid #e2e8f0;
+  background: #f8fafc; color: #64748b; font-size: 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .12s;
+}
+.act-move-btn:hover { background: #e0f2fe; color: #0284c7; border-color: #bae6fd; }
+.act-move-btn:disabled { opacity: .25; cursor: not-allowed; }
 .act-item { position: relative; }
-.act-item:hover .act-del { opacity: 1; }
+.act-item:hover .act-del, .act-item:hover .act-move { opacity: 1; }
 .act-stay {
   display: inline-flex; align-items: center; gap: 3px; margin-left: 6px;
   font-size: 10px; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd;
@@ -934,6 +945,10 @@ function renderTab() {
         const actWx = act.weather ? `${WX[act.weather.icon]||'🌤️'} ${act.weather.temperature}` : '';
 
         h += `<div class="act-item">
+          <div class="act-move">
+            <button class="act-move-btn" onclick="moveActivity(${di},${ai},-1)" title="上移" ${ai===0?'disabled':''}>▲</button>
+            <button class="act-move-btn" onclick="moveActivity(${di},${ai},1)" title="下移" ${ai>=day.activities.length-1?'disabled':''}>▼</button>
+          </div>
           <button class="act-del" onclick="deleteActivity(${di},${ai})" title="刪除此活動">✕</button>
           <div class="act-timeline">
             <span class="act-time">${act.time||''}</span>
@@ -1009,7 +1024,74 @@ function deleteActivity(dayIdx, actIdx) {
   const act = plan.itinerary[dayIdx].activities[actIdx];
   if (!confirm(`確定刪除「${act.name}」？`)) return;
   plan.itinerary[dayIdx].activities.splice(actIdx, 1);
+  recalcTimes(dayIdx);
   renderTab();
+}
+
+// ── 移動活動（上移/下移）並重新計算時間 ──
+function moveActivity(dayIdx, actIdx, direction) {
+  const acts = plan?.itinerary?.[dayIdx]?.activities;
+  if (!acts) return;
+  const newIdx = actIdx + direction;
+  if (newIdx < 0 || newIdx >= acts.length) return;
+  
+  // 交換位置
+  [acts[actIdx], acts[newIdx]] = [acts[newIdx], acts[actIdx]];
+  
+  // 重新分配時間
+  recalcTimes(dayIdx);
+  renderTab();
+}
+
+// ── 重新計算整天的時間分配 ──
+function recalcTimes(dayIdx) {
+  const acts = plan?.itinerary?.[dayIdx]?.activities;
+  if (!acts || acts.length === 0) return;
+
+  // 保留第一個活動的時間作為起點
+  let currentMin = timeToMin(acts[0].time);
+  if (isNaN(currentMin)) currentMin = 9 * 60; // 預設 09:00
+
+  for (let i = 0; i < acts.length; i++) {
+    // 設定這個活動的時間
+    acts[i].time = minToTime(currentMin);
+
+    // 估算停留時間（用 travelToNext 的間隔或預設值）
+    let stayDuration;
+    if (acts[i].type === 'FOOD') {
+      stayDuration = 60; // 餐廳 60 分鐘
+    } else if (acts[i].type === 'HOTEL') {
+      stayDuration = 30; // 飯店 30 分鐘
+    } else {
+      stayDuration = 90; // 景點 90 分鐘
+    }
+
+    // 估算交通時間
+    let travelMin = 15; // 預設 15 分鐘
+    if (acts[i].travelToNext?.duration) {
+      const parsed = parseInt(acts[i].travelToNext.duration);
+      if (!isNaN(parsed) && parsed > 0) travelMin = parsed;
+    }
+
+    // 下一個活動的開始時間 = 當前 + 停留 + 交通
+    if (i < acts.length - 1) {
+      currentMin += stayDuration + travelMin;
+      // 不要超過 23:00
+      if (currentMin > 23 * 60) currentMin = 23 * 60;
+    }
+  }
+}
+
+function timeToMin(t) {
+  if (!t) return NaN;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+function minToTime(m) {
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
 }
 
 function addActivityToPlan(dayIdx, activity) {
