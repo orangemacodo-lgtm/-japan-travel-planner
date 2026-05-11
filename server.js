@@ -94,16 +94,24 @@ async function callGroq(prompt, maxTokens) {
   const errors = [];
 
   // 強化 system prompt：Llama 在 JSON object mode 下會偷懶（finish_reason=stop 但只生成部分天數）
-  // 必須用「絕對規則」鎖住完整性
+  // 必須用「絕對規則」鎖住完整性 + 強制精簡以塞進 Groq Free tier 8192 token 上限
   const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師。
 
 【絕對規則 — 必須嚴格遵守，違反者視為任務失敗】
 1. 只輸出 JSON，不要 markdown、不要解釋文字
 2. 如果使用者請求 N 天行程，itinerary 陣列長度必須剛好等於 N，一天都不能少
-3. 寧可每天的活動數量少一點，也要把所有天數完整列出
+3. 寧可每天的活動數量少一點（最少 2 個），也要把所有天數完整列出
 4. 禁止使用「以此類推」、「...」、「(略)」等任何省略手法
 5. 禁止在所有請求天數列完之前提前結束輸出
-6. 開始輸出 JSON 之前，先在心中數一遍：使用者要求 N 天 → 我要產 N 個 itinerary 物件`;
+6. 開始輸出 JSON 之前，先在心中數一遍：使用者要求 N 天 → 我要產 N 個 itinerary 物件
+
+【精簡規則 — 確保 10+ 天行程也能完整塞進回應】
+7. description 欄位每個不超過 40 個字
+8. highlights 陣列每個元素不超過 15 個字，整個陣列不超過 3 個元素
+9. igCaption 不超過 60 個字（含 emoji）
+10. theme 不超過 20 個字
+11. advice 陣列不超過 5 個元素，每個不超過 30 個字
+12. 寧可內容精簡而完整，絕對不要內容豐富但中途斷掉`;
 
   for (const model of models) {
     try {
@@ -115,7 +123,7 @@ async function callGroq(prompt, maxTokens) {
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: Math.min(maxTokens || 32768, 32768),
+        max_tokens: Math.min(maxTokens || 8000, 8000),  // Groq Free tier 硬上限約 8192，留 buffer
         response_format: { type: 'json_object' },
       }, {
         headers: {
