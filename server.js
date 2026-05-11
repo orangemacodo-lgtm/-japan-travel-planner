@@ -145,7 +145,7 @@ C5. advice 陣列最多 5 個，每個不超過 30 字
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: Math.min(maxTokens || 8000, 8000),
+        max_tokens: Math.min(maxTokens || 4500, 4500),
         response_format: { type: 'json_object' },
       }, {
         headers: {
