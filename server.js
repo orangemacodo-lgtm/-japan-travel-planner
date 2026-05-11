@@ -1,25 +1,26 @@
 const express = require('express');
-const axios   = require('axios');
-const path    = require('path');
-
-const app  = express();
+const axios = require('axios');
+const path = require('path');
+ 
+const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY || '';
-
+const GROQ_KEY = process.env.GROQ_API_KEY || '';
+ 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '1mb' }));
-
+ 
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
-
+ 
   // 1. 直接解析
   try { return JSON.parse(text.trim()); } catch (_) {}
-
+ 
   // 2. 去 markdown code block
   const cb = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (cb) { try { return JSON.parse(cb[1].trim()); } catch (_) {} }
-
+ 
   // 3. 找最大 {...}
   const m = text.match(/\{[\s\S]*\}/);
   if (m) {
@@ -35,16 +36,20 @@ function extractJSON(text) {
   }
   return null;
 }
-
+ 
 // ── Gemini API 呼叫 ─────────────────────────────────────────
+// 回傳 { ok:true, provider, model, text, finishReason } 或 { ok:false, errors:[{model,msg}] }
 async function callGemini(prompt, maxTokens) {
+  if (!API_KEY) return { ok: false, errors: [{ model: 'gemini', msg: 'GEMINI_API_KEY 未設定' }] };
+ 
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
-
+  const errors = [];
+ 
   for (const model of models) {
     try {
-      console.log(`[AI] 嘗試 ${model}...`);
+      console.log(`[Gemini] 嘗試 ${model}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
-
+ 
       const { data } = await axios.post(url, {
         contents: [{ parts: [{ text: prompt + '\n\n重要：只輸出 JSON，不要 markdown，不要解釋文字。' }] }],
         generationConfig: {
@@ -55,75 +60,150 @@ async function callGemini(prompt, maxTokens) {
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
-
+ 
       const parts = data.candidates?.[0]?.content?.parts || [];
       const text = parts
-        .filter(p => p.text)        // 只取文字 part（排除思考 part）
+        .filter(p => p.text)
         .map(p => p.text)
         .join('');
-
+ 
       const finishReason = data.candidates?.[0]?.finishReason || 'unknown';
-
+ 
       if (!text) {
-        console.error(`[AI] ${model}: 回應為空 (finishReason: ${finishReason})`);
+        const msg = `回應為空 (finishReason: ${finishReason})`;
+        console.error(`[Gemini] ${model}: ${msg}`);
+        errors.push({ model, msg });
         continue;
       }
-
-      console.log(`[AI] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
-      return { model, text, finishReason };
+ 
+      console.log(`[Gemini] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
+      return { ok: true, provider: 'gemini', model, text, finishReason };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
-      console.error(`[AI] ${model} 失敗: ${msg}`);
+      console.error(`[Gemini] ${model} 失敗: ${msg}`);
+      errors.push({ model, msg });
     }
   }
-  throw new Error('所有模型都失敗了，請稍後再試');
+  return { ok: false, errors };
 }
-
+ 
+// ── Groq API 呼叫（fallback）────────────────────────────────
+// 回傳同 callGemini 的形狀。Groq 用 OpenAI 相容介面。
+async function callGroq(prompt, maxTokens) {
+  if (!GROQ_KEY) return { ok: false, errors: [{ model: 'groq', msg: 'GROQ_API_KEY 未設定' }] };
+ 
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  const errors = [];
+ 
+  for (const model of models) {
+    try {
+      console.log(`[Groq] 嘗試 ${model}...`);
+      const { data } = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        model,
+        messages: [
+          { role: 'system', content: '你是專業的日本旅遊規劃師。永遠只輸出 JSON，不要 markdown，不要解釋文字。' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: Math.min(maxTokens || 8192, 32768),
+        response_format: { type: 'json_object' },
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GROQ_KEY}`,
+        },
+        timeout: 120000,
+      });
+ 
+      const text = data.choices?.[0]?.message?.content || '';
+      const finishReason = data.choices?.[0]?.finish_reason || 'unknown';
+ 
+      if (!text) {
+        const msg = `回應為空 (finish_reason: ${finishReason})`;
+        console.error(`[Groq] ${model}: ${msg}`);
+        errors.push({ model, msg });
+        continue;
+      }
+ 
+      console.log(`[Groq] ${model} 成功，${text.length} 字 (finish_reason: ${finishReason})`);
+      return { ok: true, provider: 'groq', model, text, finishReason };
+    } catch (e) {
+      const msg = e.response?.data?.error?.message || e.message;
+      console.error(`[Groq] ${model} 失敗: ${msg}`);
+      errors.push({ model, msg });
+    }
+  }
+  return { ok: false, errors };
+}
+ 
+// ── 統一 LLM 入口：Gemini → Groq fallback ───────────────────
+// 成功回 { provider, model, text, finishReason }；全失敗則 throw 並附上 .details
+async function callLLM(prompt, maxTokens) {
+  const allErrors = [];
+ 
+  // 1) Gemini
+  const gem = await callGemini(prompt, maxTokens);
+  if (gem.ok) return gem;
+  allErrors.push(...gem.errors.map(e => ({ provider: 'gemini', ...e })));
+ 
+  // 2) Fallback to Groq
+  console.log('[LLM] Gemini 全失敗，切換 Groq...');
+  const groq = await callGroq(prompt, maxTokens);
+  if (groq.ok) return groq;
+  allErrors.push(...groq.errors.map(e => ({ provider: 'groq', ...e })));
+ 
+  // 3) Both providers exhausted
+  const err = new Error('所有模型都失敗了，請稍後再試');
+  err.details = allErrors;
+  throw err;
+}
+ 
 // ── 主 API ───────────────────────────────────────────────────
 app.post('/api/generate', async (req, res) => {
-  if (!API_KEY) return res.status(500).json({ ok: false, error: '未設定 GEMINI_API_KEY' });
-
+  if (!API_KEY && !GROQ_KEY) {
+    return res.status(500).json({ ok: false, error: '未設定 GEMINI_API_KEY 或 GROQ_API_KEY' });
+  }
+ 
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ ok: false, error: '缺少 prompt' });
-
-    const { model, text, finishReason } = await callGemini(prompt);
+ 
+    const { provider, model, text, finishReason } = await callLLM(prompt);
     const parsed = extractJSON(text);
-
+ 
     if (parsed) {
-      return res.json({ ok: true, text: JSON.stringify(parsed) });
+      return res.json({ ok: true, text: JSON.stringify(parsed), provider, model });
     }
-
-    // JSON 解析失敗 → 回傳錯誤 + 原始預覽（幫助除錯）
-    console.error(`[API] JSON 解析失敗。模型: ${model}, 原因: ${finishReason}`);
+ 
+    console.error(`[API] JSON 解析失敗。provider: ${provider}, 模型: ${model}, 原因: ${finishReason}`);
     console.error(`[API] 前 500 字: ${text.substring(0, 500)}`);
     res.status(500).json({
       ok: false,
-      error: `AI 回傳了非 JSON 內容（模型: ${model}）。請重試一次。`,
+      error: `AI 回傳了非 JSON 內容（${provider}/${model}）。請重試一次。`,
       preview: text.substring(0, 300),
     });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message, details: e.details || null });
   }
 });
-
+ 
 // ── 測試 API 連線 ───────────────────────────────────────────
 app.get('/api/test', async (req, res) => {
-  if (!API_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY' });
+  if (!API_KEY && !GROQ_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY 或 GROQ_API_KEY' });
   try {
-    const { model, text } = await callGemini(
+    const { provider, model, text } = await callLLM(
       '回傳 JSON：{"status":"ok","message":"連線成功"}。只要 JSON。', 256
     );
     const parsed = extractJSON(text);
-    res.json({ ok: true, model, rawPreview: text.substring(0, 300), parsed, jsonOk: !!parsed });
+    res.json({ ok: true, provider, model, rawPreview: text.substring(0, 300), parsed, jsonOk: !!parsed });
   } catch (e) {
-    res.json({ ok: false, error: e.message });
+    res.json({ ok: false, error: e.message, details: e.details || null });
   }
 });
-
+ 
 // ── 除錯：測試實際行程生成 ───────────────────────────────────
 app.get('/api/debug-generate', async (req, res) => {
-  if (!API_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY' });
+  if (!API_KEY && !GROQ_KEY) return res.json({ ok: false, error: '未設定 API KEY' });
   try {
     const prompt = `你是日本旅遊規劃師，用繁體中文。
 規劃大阪 2 天行程，每天 3 個活動。
@@ -133,11 +213,12 @@ app.get('/api/debug-generate', async (req, res) => {
 "itinerary":[{"dayNumber":1,"date":"2026-05-01","region":"大阪","theme":"主題",
 "activities":[{"time":"10:00","name":"景點","description":"描述","type":"SIGHTSEEING",
 "highlights":["亮點"],"coordinates":{"lat":34.69,"lng":135.50}}]}]}`;
-
-    const { model, text, finishReason } = await callGemini(prompt, 4096);
+ 
+    const { provider, model, text, finishReason } = await callLLM(prompt, 4096);
     const parsed = extractJSON(text);
     res.json({
       ok: !!parsed,
+      provider,
       model,
       finishReason,
       rawLength: text.length,
@@ -146,10 +227,10 @@ app.get('/api/debug-generate', async (req, res) => {
       jsonOk: !!parsed,
     });
   } catch (e) {
-    res.json({ ok: false, error: e.message });
+    res.json({ ok: false, error: e.message, details: e.details || null });
   }
 });
-
+ 
 // ── 即時匯率（JPY→TWD）────────────────────────────────────
 app.get('/api/rate', async (req, res) => {
   try {
@@ -173,10 +254,10 @@ app.get('/api/rate', async (req, res) => {
     res.json({ ok: false, rate: 0.21, error: e.message });
   }
 });
-
+ 
 // ── 附近景點推薦 ────────────────────────────────────────────
 app.post('/api/suggest', async (req, res) => {
-  if (!API_KEY) return res.status(500).json({ ok: false, error: '未設定 API KEY' });
+  if (!API_KEY && !GROQ_KEY) return res.status(500).json({ ok: false, error: '未設定 API KEY' });
   try {
     const { region, category, lat, lng, existingNames, date } = req.body;
     const catMap = {
@@ -188,17 +269,17 @@ app.post('/api/suggest', async (req, res) => {
     const catDesc = catMap[category] || '各類景點';
     const nearDesc = lat && lng ? `座標 ${lat},${lng} 附近` : `${region || '日本'}地區`;
     const excludeStr = existingNames?.length ? `排除：${existingNames.join('、')}` : '';
-
+ 
     const prompt = `推薦 5 個${nearDesc}的${catDesc}。${excludeStr}
 日期參考：${date || '近期'}。繁體中文。
-回傳純 JSON 陣列（不要 markdown）：
-[{"name":"名稱","description":"一句描述","type":"${category}",
+回傳純 JSON 物件，鍵為 "suggestions"（不要 markdown）：
+{"suggestions":[{"name":"名稱","description":"一句描述","type":"${category}",
 "igCaption":"用IG網紅口吻介紹（有emoji）",
 "highlights":["亮點1","亮點2"],
 "coordinates":{"lat":0,"lng":0},
-"estimatedStay":"60分鐘"}]`;
-
-    const { text } = await callGemini(prompt, 4096);
+"estimatedStay":"60分鐘"}]}`;
+ 
+    const { text } = await callLLM(prompt, 4096);
     let parsed = extractJSON(text);
     // 可能是陣列或包在物件裡
     if (parsed && !Array.isArray(parsed)) {
@@ -213,11 +294,13 @@ app.post('/api/suggest', async (req, res) => {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
-
+ 
 app.listen(PORT, () => {
-  console.log(`\n🗾  Japan Travel Planner (Gemini Free)`);
-  console.log(`📡  http://localhost:${PORT}`);
-  console.log(`🔑  Gemini Key: ${API_KEY ? '已設定 ✅' : '❌ 未設定'}`);
-  console.log(`📌  模型：gemini-2.5-flash（自動降級）`);
-  console.log(`🔧  測試：/api/test | 除錯：/api/debug-generate\n`);
+  console.log(`\n🗾 Japan Travel Planner (Gemini + Groq fallback)`);
+  console.log(`📡 http://localhost:${PORT}`);
+  console.log(`🔑 Gemini Key: ${API_KEY ? '已設定 ✅' : '❌ 未設定'}`);
+  console.log(`🔑 Groq Key:   ${GROQ_KEY ? '已設定 ✅' : '❌ 未設定'}`);
+  console.log(`📌 主力：gemini-2.5-flash → 2.0-flash → 2.5-flash-lite`);
+  console.log(`📌 備援：llama-3.3-70b-versatile → llama-3.1-8b-instant`);
+  console.log(`🔧 測試：/api/test | 除錯：/api/debug-generate\n`);
 });
