@@ -13,19 +13,12 @@ app.use(express.json({ limit: '1mb' }));
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
-
-  // 1. 直接解析
   try { return JSON.parse(text.trim()); } catch (_) {}
-
-  // 2. 去 markdown code block
   const cb = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (cb) { try { return JSON.parse(cb[1].trim()); } catch (_) {} }
-
-  // 3. 找最大 {...}
   const m = text.match(/\{[\s\S]*\}/);
   if (m) {
     try { return JSON.parse(m[0]); } catch (_) {}
-    // 4. 修復截斷的 JSON
     const s = m[0];
     const last = s.lastIndexOf(']');
     if (last > 0) {
@@ -51,21 +44,14 @@ async function callGemini(prompt, maxTokens) {
 
       const { data } = await axios.post(url, {
         contents: [{ parts: [{ text: prompt + '\n\n重要：只輸出 JSON，不要 markdown，不要解釋文字。' }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: maxTokens || 65536,
-        },
+        generationConfig: { temperature: 0.3, maxOutputTokens: maxTokens || 65536 },
       }, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
 
       const parts = data.candidates?.[0]?.content?.parts || [];
-      const text = parts
-        .filter(p => p.text)
-        .map(p => p.text)
-        .join('');
-
+      const text = parts.filter(p => p.text).map(p => p.text).join('');
       const finishReason = data.candidates?.[0]?.finishReason || 'unknown';
 
       if (!text) {
@@ -93,7 +79,6 @@ async function callGroq(prompt, maxTokens) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
   const errors = [];
 
-  // 強化 system prompt：完整性 + 精準度 + 精簡度三軸鎖
   const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
 
 ═══ 規則 A：完整性（違反視為任務失敗）═══
@@ -180,24 +165,44 @@ C5. advice 陣列最多 5 個，每個不超過 30 字
 async function callLLM(prompt, maxTokens) {
   const allErrors = [];
 
-  // 1) Gemini
   const gem = await callGemini(prompt, maxTokens);
   if (gem.ok) return gem;
   allErrors.push(...gem.errors.map(e => ({ provider: 'gemini', ...e })));
 
-  // 2) Fallback to Groq
   console.log('[LLM] Gemini 全失敗，切換 Groq...');
   const groq = await callGroq(prompt, maxTokens);
   if (groq.ok) return groq;
   allErrors.push(...groq.errors.map(e => ({ provider: 'groq', ...e })));
 
-  // 3) Both providers exhausted
   const err = new Error('所有模型都失敗了，請稍後再試');
   err.details = allErrors;
   throw err;
 }
 
-// ── 主 API ───────────────────────────────────────────────────
+// ── Chunking 輔助：rate-limit 自動等待 + retry ─────────────
+async function callLLMWithRetry(prompt, label = '') {
+  const MAX_RETRIES = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await callLLM(prompt);
+    } catch (e) {
+      lastErr = e;
+      const allMsgs = JSON.stringify(e.details || e.message || '');
+      const m = allMsgs.match(/try again in ([\d.]+)s/i);
+      if (m && attempt < MAX_RETRIES) {
+        const waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 800;
+        console.log(`[${label}] Rate limit hit, attempt ${attempt}/${MAX_RETRIES}, wait ${waitMs}ms`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+// ── 主 API（含 chunking：N≥6 天自動拆分）────────────────────
 app.post('/api/generate', async (req, res) => {
   if (!API_KEY && !GROQ_KEY) {
     return res.status(500).json({ ok: false, error: '未設定 GEMINI_API_KEY 或 GROQ_API_KEY' });
@@ -207,6 +212,71 @@ app.post('/api/generate', async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ ok: false, error: '缺少 prompt' });
 
+    const dayMatch = prompt.match(/(\d+)\s*天/);
+    const totalDays = dayMatch ? parseInt(dayMatch[1], 10) : 0;
+    const CHUNK_THRESHOLD = 6;
+    const CHUNK_SIZE = 5;
+
+    if (totalDays >= CHUNK_THRESHOLD) {
+      const chunks = [];
+      for (let s = 1; s <= totalDays; s += CHUNK_SIZE) {
+        chunks.push({ start: s, end: Math.min(s + CHUNK_SIZE - 1, totalDays) });
+      }
+      console.log(`[Chunk] ${totalDays} 天 → ${chunks.length} 塊（每塊最多 ${CHUNK_SIZE} 天）`);
+
+      const itinerary = [];
+      let firstMeta = null;
+      let usedProvider = null;
+      let usedModel = null;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const { start, end } = chunks[i];
+        const chunkDays = end - start + 1;
+        const isFirst = i === 0;
+
+        const chunkPrompt = `${prompt}
+
+【CHUNKING MODE — 此次只生成第 ${start} 到第 ${end} 天】
+- itinerary 陣列長度必須剛好 = ${chunkDays}
+- 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
+- ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
+- 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準`;
+
+        console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}`);
+        const result = await callLLMWithRetry(chunkPrompt, `Chunk ${i + 1}`);
+        const parsed = extractJSON(result.text);
+
+        if (!parsed) {
+          throw new Error(`Chunk ${i + 1} (days ${start}-${end}) JSON 解析失敗`);
+        }
+
+        if (Array.isArray(parsed.itinerary)) {
+          itinerary.push(...parsed.itinerary);
+        } else {
+          console.error(`[Chunk] ${i + 1} 沒有 itinerary 陣列`);
+        }
+
+        if (isFirst) {
+          firstMeta = parsed;
+          usedProvider = result.provider;
+          usedModel = result.model;
+        }
+      }
+
+      const merged = { ...firstMeta, itinerary };
+      console.log(`[Chunk] 合併完成：${itinerary.length} 天`);
+      return res.json({
+        ok: true,
+        text: JSON.stringify(merged),
+        provider: usedProvider,
+        model: usedModel,
+        chunked: true,
+        totalDays: itinerary.length,
+        chunkCount: chunks.length,
+      });
+    }
+
+    // 單次呼叫（≤5 天）
     const { provider, model, text, finishReason } = await callLLM(prompt);
     const parsed = extractJSON(text);
 
@@ -333,11 +403,12 @@ app.post('/api/suggest', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🗾 Japan Travel Planner (Gemini + Groq fallback)`);
+  console.log(`\n🗾 Japan Travel Planner (Gemini + Groq + Chunking)`);
   console.log(`📡 http://localhost:${PORT}`);
   console.log(`🔑 Gemini Key: ${API_KEY ? '已設定 ✅' : '❌ 未設定'}`);
   console.log(`🔑 Groq Key:   ${GROQ_KEY ? '已設定 ✅' : '❌ 未設定'}`);
   console.log(`📌 主力：gemini-2.5-flash → 2.0-flash → 2.5-flash-lite`);
   console.log(`📌 備援：llama-3.3-70b-versatile → llama-3.1-8b-instant`);
+  console.log(`🧩 Chunking：≥6 天自動拆成 5 天/塊，含 rate-limit 自動 retry`);
   console.log(`🔧 測試：/api/test | 除錯：/api/debug-generate\n`);
 });
