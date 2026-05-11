@@ -93,25 +93,47 @@ async function callGroq(prompt, maxTokens) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
   const errors = [];
 
-  // 強化 system prompt：Llama 在 JSON object mode 下會偷懶（finish_reason=stop 但只生成部分天數）
-  // 必須用「絕對規則」鎖住完整性 + 強制精簡以塞進 Groq Free tier 8192 token 上限
-  const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師。
+  // 強化 system prompt：完整性 + 精準度 + 精簡度三軸鎖
+  const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
 
-【絕對規則 — 必須嚴格遵守，違反者視為任務失敗】
-1. 只輸出 JSON，不要 markdown、不要解釋文字
-2. 如果使用者請求 N 天行程，itinerary 陣列長度必須剛好等於 N，一天都不能少
-3. 寧可每天的活動數量少一點（最少 2 個），也要把所有天數完整列出
-4. 禁止使用「以此類推」、「...」、「(略)」等任何省略手法
-5. 禁止在所有請求天數列完之前提前結束輸出
-6. 開始輸出 JSON 之前，先在心中數一遍：使用者要求 N 天 → 我要產 N 個 itinerary 物件
+═══ 規則 A：完整性（違反視為任務失敗）═══
+A1. 只輸出 JSON，不要 markdown、不要解釋文字
+A2. 如果使用者請求 N 天行程，itinerary 陣列長度必須剛好等於 N，一天都不能少
+A3. 寧可每天活動數量少一點（最少 2 個），也要把所有天數完整列出
+A4. 禁止「以此類推」「...」「(略)」等省略手法
+A5. 禁止在所有請求天數列完之前提前結束輸出
 
-【精簡規則 — 確保 10+ 天行程也能完整塞進回應】
-7. description 欄位每個不超過 40 個字
-8. highlights 陣列每個元素不超過 15 個字，整個陣列不超過 3 個元素
-9. igCaption 不超過 60 個字（含 emoji）
-10. theme 不超過 20 個字
-11. advice 陣列不超過 5 個元素，每個不超過 30 個字
-12. 寧可內容精簡而完整，絕對不要內容豐富但中途斷掉`;
+═══ 規則 B：精準度（這是品質底線，違反等同籠統廢話）═══
+B1. name 必須是真實存在的具體名稱
+    ✅「金閣寺」「一蘭拉麵 道頓堀店」「黑門市場」「東大寺南大門」
+    ❌「某著名寺廟」「美食拉麵店」「當地市場」「歷史景點」
+
+B2. description 必須包含「為什麼推薦這裡」的具體理由
+    ✅「全京都唯一保留江戶時代町家建築的石板街道」
+    ✅「鍍金舍利殿映於鏡湖池，三層樓各自代表寢殿造、武家造、禪宗樣式」
+    ❌「很美的地方」「值得一去」「日本必訪景點」
+
+B3. 若 type=FOOD（餐廳），description 或 highlights 必須指出**招牌菜或具體特色**
+    ✅「招牌黑蜜豬骨湯拉麵 + 半熟蛋叉燒丼套餐」
+    ✅「炭火燒鳥附鳥心、雞皮、肝串三種限定部位」
+    ❌「日式拉麵」「美味餐廳」「人氣店家」
+
+B4. 若 type=SIGHTSEEING/ACTIVITY，highlights 必須給 2-3 個獨特賣點
+    ✅["金箔外牆", "鏡湖池倒影攝影角度", "宇治抹茶冰淇淋限定"]
+    ❌["漂亮", "很美", "值得"]
+
+B5. 嚴禁使用空洞形容詞：「很棒」「漂亮」「值得一去」「超讚」「必去」「美麗」「特別」「很有名」
+
+═══ 規則 C：精簡度（確保 10+ 天能完整塞進回應）═══
+C1. description 每個不超過 70 字（精準優先，但別寫廢話）
+C2. highlights 每元素 10-25 字，2-3 個元素
+C3. igCaption 不超過 80 字（要含至少 1 個具體賣點）
+C4. theme 不超過 25 字
+C5. advice 陣列最多 5 個，每個不超過 30 字
+
+═══ 黃金原則 ═══
+寧可內容精緻而完整，絕對不要籠統而豐富、也不要中途斷掉。
+每個欄位都要讓讀者「光看文字就知道為什麼要去這裡」。`;
 
   for (const model of models) {
     try {
@@ -123,7 +145,7 @@ async function callGroq(prompt, maxTokens) {
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: Math.min(maxTokens || 8000, 8000),  // Groq Free tier 硬上限約 8192，留 buffer
+        max_tokens: Math.min(maxTokens || 8000, 8000),
         response_format: { type: 'json_object' },
       }, {
         headers: {
