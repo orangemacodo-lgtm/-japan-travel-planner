@@ -76,7 +76,7 @@ async function callGemini(prompt, maxTokens) {
 async function callGroq(prompt, maxTokens) {
   if (!GROQ_KEY) return { ok: false, errors: [{ model: 'groq', msg: 'GROQ_API_KEY 未設定' }] };
 
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+  const models = ['moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
   const errors = [];
 
   const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
