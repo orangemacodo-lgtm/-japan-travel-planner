@@ -3,8 +3,10 @@ name: Keep Render alive
 # Render free tier sleeps after 15 min idle. Ping /api/ping every 10 min
 # so cold-start 502s never happen for real users.
 on:
+  # 避開 :00/:10/:20 整點 — GitHub Actions 在這些時刻負載最高，scheduled runs 常被 skip。
+  # 用 7,17,27,37,47,57 強制偏移到較冷門時段。
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch: {}
 
 jobs:
