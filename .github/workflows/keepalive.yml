@@ -1,0 +1,22 @@
+name: Keep Render alive
+
+# Render free tier sleeps after 15 min idle. Ping /api/ping every 10 min
+# so cold-start 502s never happen for real users.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/ping
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            https://japan-travel-planner-orui.onrender.com/api/ping)
+          echo "HTTP status: $response"
+          if [ "$response" != "200" ]; then
+            echo "Ping returned non-200, but Render may still have woken up. Not failing the job."
+          fi
