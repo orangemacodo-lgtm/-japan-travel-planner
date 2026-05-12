@@ -30,6 +30,15 @@ const suggestLimiter = rateLimit({
   message: { ok: false, error: '請求太頻繁，請稍後再試。' },
 });
 
+// ── In-memory 統計（Render 重啟後歸零，但用來看當下流量分布很夠）─
+const stats = {
+  startedAt: Date.now(),
+  generate: { ok: 0, fail: 0 },
+  suggest: { ok: 0, fail: 0 },
+  modelHits: {},
+  modelFails: {},
+};
+
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
@@ -78,15 +87,18 @@ async function callGemini(prompt, maxTokens) {
         const msg = `回應為空 (finishReason: ${finishReason})`;
         console.error(`[Gemini] ${model}: ${msg}`);
         errors.push({ model, msg });
+        stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
         continue;
       }
 
       console.log(`[Gemini] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
+      stats.modelHits[model] = (stats.modelHits[model] || 0) + 1;
       return { ok: true, provider: 'gemini', model, text, finishReason };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
       console.error(`[Gemini] ${model} 失敗: ${msg}`);
       errors.push({ model, msg });
+      stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
     }
   }
   return { ok: false, errors };
@@ -110,46 +122,8 @@ async function callGroq(prompt, maxTokens) {
   const models = GROQ_MODELS;
   const errors = [];
 
-  const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
-
-═══ 規則 A：完整性（違反視為任務失敗）═══
-A1. 只輸出 JSON，不要 markdown、不要解釋文字
-A2. 如果使用者請求 N 天行程，itinerary 陣列長度必須剛好等於 N，一天都不能少
-A3. 寧可每天活動數量少一點（最少 2 個），也要把所有天數完整列出
-A4. 禁止「以此類推」「...」「(略)」等省略手法
-A5. 禁止在所有請求天數列完之前提前結束輸出
-
-═══ 規則 B：精準度（這是品質底線，違反等同籠統廢話）═══
-B1. name 必須是真實存在的具體名稱
-    ✅「金閣寺」「一蘭拉麵 道頓堀店」「黑門市場」「東大寺南大門」
-    ❌「某著名寺廟」「美食拉麵店」「當地市場」「歷史景點」
-
-B2. description 必須包含「為什麼推薦這裡」的具體理由
-    ✅「全京都唯一保留江戶時代町家建築的石板街道」
-    ✅「鍍金舍利殿映於鏡湖池，三層樓各自代表寢殿造、武家造、禪宗樣式」
-    ❌「很美的地方」「值得一去」「日本必訪景點」
-
-B3. 若 type=FOOD（餐廳），description 或 highlights 必須指出**招牌菜或具體特色**
-    ✅「招牌黑蜜豬骨湯拉麵 + 半熟蛋叉燒丼套餐」
-    ✅「炭火燒鳥附鳥心、雞皮、肝串三種限定部位」
-    ❌「日式拉麵」「美味餐廳」「人氣店家」
-
-B4. 若 type=SIGHTSEEING/ACTIVITY，highlights 必須給 2-3 個獨特賣點
-    ✅["金箔外牆", "鏡湖池倒影攝影角度", "宇治抹茶冰淇淋限定"]
-    ❌["漂亮", "很美", "值得"]
-
-B5. 嚴禁使用空洞形容詞：「很棒」「漂亮」「值得一去」「超讚」「必去」「美麗」「特別」「很有名」
-
-═══ 規則 C：精簡度（確保 10+ 天能完整塞進回應）═══
-C1. description 每個不超過 70 字（精準優先，但別寫廢話）
-C2. highlights 每元素 10-25 字，2-3 個元素
-C3. igCaption 不超過 80 字（要含至少 1 個具體賣點）
-C4. theme 不超過 25 字
-C5. advice 陣列最多 5 個，每個不超過 30 字
-
-═══ 黃金原則 ═══
-寧可內容精緻而完整，絕對不要籠統而豐富、也不要中途斷掉。
-每個欄位都要讓讀者「光看文字就知道為什麼要去這裡」。`;
+  // 用戶 prompt 已含完整規則（去重、店名、座標、長度等）。System prompt 只保留輸出格式 guard。
+  const SYSTEM_PROMPT = '你是日本旅遊規劃師，輸出**只能**是純 JSON（不要 markdown、不要解釋文字）。完整輸出所有要求的天數，不可省略、不可中途截斷。';
 
   for (const model of models) {
     try {
@@ -178,15 +152,18 @@ C5. advice 陣列最多 5 個，每個不超過 30 字
         const msg = `回應為空 (finish_reason: ${finishReason})`;
         console.error(`[Groq] ${model}: ${msg}`);
         errors.push({ model, msg });
+        stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
         continue;
       }
 
       console.log(`[Groq] ${model} 成功，${text.length} 字 (finish_reason: ${finishReason})`);
+      stats.modelHits[model] = (stats.modelHits[model] || 0) + 1;
       return { ok: true, provider: 'groq', model, text, finishReason };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
       console.error(`[Groq] ${model} 失敗: ${msg}`);
       errors.push({ model, msg });
+      stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
     }
   }
   return { ok: false, errors };
@@ -275,7 +252,8 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
 【CHUNKING MODE — 此次只生成第 ${start} 到第 ${end} 天】
 - itinerary 陣列長度必須剛好 = ${chunkDays}
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
-- ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
+- 每個 itinerary 物件**必須**有非空 theme、region 字串；activities 陣列要有具體活動
+- ${isFirst ? '頂層欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '頂層欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
 - 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準
 - 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 類 activity.name 必須兩兩不同。HOTEL 類例外可重複。${exclusionBlock}`;
 
@@ -332,6 +310,7 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
         console.warn(`[Chunk] 合併後仍有 ${dups.length} 個非 HOTEL 重複 name：${dups.map(([n, c]) => `${n}×${c}`).join('、')}`);
       }
       console.log(`[Chunk] 合併完成：${itinerary.length} 天, 非 HOTEL 唯一活動 ${counts.size}/${allNames.length}`);
+      stats.generate.ok++;
       return res.json({
         ok: true,
         text: JSON.stringify(merged),
@@ -348,9 +327,11 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
     const parsed = extractJSON(text);
 
     if (parsed) {
+      stats.generate.ok++;
       return res.json({ ok: true, text: JSON.stringify(parsed), provider, model });
     }
 
+    stats.generate.fail++;
     console.error(`[API] JSON 解析失敗。provider: ${provider}, 模型: ${model}, 原因: ${finishReason}`);
     console.error(`[API] 前 500 字: ${text.substring(0, 500)}`);
     res.status(500).json({
@@ -359,6 +340,7 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
       preview: text.substring(0, 300),
     });
   } catch (e) {
+    stats.generate.fail++;
     res.status(500).json({ ok: false, error: e.message, details: e.details || null });
   }
 });
@@ -410,6 +392,19 @@ app.get('/api/debug-generate', async (req, res) => {
 // ── Keep-alive ping（不打 LLM，安全給 UptimeRobot 等 cron 喚醒服務用）─
 app.get('/api/ping', (req, res) => {
   res.json({ ok: true, ts: Date.now() });
+});
+
+// ── /api/stats 看流量與哪個模型接了 ─────────────────────────
+app.get('/api/stats', (req, res) => {
+  const uptimeMin = Math.floor((Date.now() - stats.startedAt) / 60000);
+  res.json({
+    ok: true,
+    uptimeMinutes: uptimeMin,
+    generate: stats.generate,
+    suggest: stats.suggest,
+    modelHits: stats.modelHits,
+    modelFails: stats.modelFails,
+  });
 });
 
 // ── 除錯：列出 Groq 上實際可用的模型 ───────────────────────
@@ -482,10 +477,13 @@ app.post('/api/suggest', suggestLimiter, async (req, res) => {
       if (arr) parsed = arr;
     }
     if (Array.isArray(parsed) && parsed.length > 0) {
+      stats.suggest.ok++;
       return res.json({ ok: true, suggestions: parsed });
     }
+    stats.suggest.fail++;
     res.json({ ok: false, error: '無法解析推薦結果' });
   } catch (e) {
+    stats.suggest.fail++;
     res.status(500).json({ ok: false, error: e.message });
   }
 });

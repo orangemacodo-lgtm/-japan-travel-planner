@@ -598,7 +598,6 @@ const INTERESTS = [
   '花火景點','當季景點/櫻花','攝影打卡','親子活動',
 ];
 const ICONS = {FOOD:'🍱',SIGHTSEEING:'⛩️',ACTIVITY:'🎯',HOTEL:'🏨',DRIVE:'🚗',SHOPPING:'🛍️'};
-const WX = {sunny:'☀️',cloudy:'⛅',rainy:'🌧️',snowy:'❄️'};
 const REGIONS = {
   all:'全日本',hokkaido:'北海道',tohoku:'東北',kanto:'關東/東京',
   chubu:'中部/北陸',kansai:'關西/大阪',chugoku:'中國/四國',kyushu:'九州',okinawa:'沖繩'
@@ -718,35 +717,24 @@ async function generate() {
   const descLen = isLong ? '5字內' : '10字內';
   const igLen = isLong ? '10字內有emoji' : '1-2句有emoji像網紅';
 
-  const prompt = `你是日本旅遊規劃師+IG網紅。繁體中文。
+  const prompt = `日本旅遊規劃師+IG網紅。繁體中文。只輸出 JSON。
 
-資訊：區域${regLabel}、${startDate}~${endDate}（${days}天）、抵達${arrTime}離開${depTime}、${adults}大${kids}小（${members}）、${isCar?'自駕':'大眾運輸'}、興趣：${[...selectedInterests].join('/')}${beenBefore?'、深度旅':''}
-${requests?'需求：'+requests:''}
+行程：${regLabel}、${startDate}~${endDate}（${days}天）、${arrTime}到${depTime}離、${adults}大${kids}小(${members})、${isCar?'自駕':'大眾運輸'}、興趣${[...selectedInterests].join('/')}${beenBefore?'、深度旅':''}${requests?'、需求：'+requests:''}
 
-回傳純JSON：
-{"tripTitle":"標題","overview":"摘要",
-"advice":["建議1","建議2"],
-"packingList":[{"category":"類","items":["物品"]}],
-"itinerary":[{"dayNumber":1,"date":"${startDate}","region":"地區","theme":"主題",
-"weather":{"condition":"天氣","temperature":"15~22°C","icon":"sunny"},
-"activities":[{"time":"14:00","name":"景點名","description":"${descLen}描述",
-"igCaption":"${igLen}","highlights":["亮點"],"type":"SIGHTSEEING",
-"coordinates":{"lat":0,"lng":0},
-"ticketInfo":{"required":false,"priceEstimate":"免費"},
-"reservation":{"needed":false,"tips":""},
-"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km"}}]}]}
+JSON 結構（每欄都要有，不可省略）：
+{"tripTitle":"","overview":"","advice":["",""],"packingList":[{"category":"","items":[""]}],
+"itinerary":[{"dayNumber":1,"date":"${startDate}","region":"","theme":"","activities":[
+{"time":"14:00","name":"","description":"","igCaption":"","highlights":[""],"type":"SIGHTSEEING",
+"coordinates":{"lat":0,"lng":0},"ticketInfo":{"required":false,"priceEstimate":""},
+"reservation":{"needed":false,"tips":""},"travelToNext":{"mode":"${isCar?'car':'train'}","duration":"","distance":""}}]}]}
 
-規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷
-
-座標規則：coordinates 的 lat/lng **絕對不可以是 0/0 或範例值**。每個 activity 都要填它真實的緯度經度（金閣寺=35.0394,135.7292；道頓堀=34.6687,135.5018；清水寺=34.9949,135.7850 諸如此類）。地圖上每個點都應該落在該景點實際位置，不可全部疊在同一處。
-
-去重規則（重要，只針對 type=SIGHTSEEING / FOOD / ACTIVITY / SHOPPING）：整趟 ${days} 天行程中，這些類型的 activity.name **不得重複出現**。同一家拉麵店、同一個神社、同一個市場都不可在不同天出現第二次。連鎖店若真的不同分店，必須在 name 標明分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）。
-⚠️ 例外：type=HOTEL 允許連續多天重複出現（旅客住同一家飯店是常態，不算違反去重）。
-
-店名規則（極重要，違反等於任務失敗）：activity.name 必須是 Google Maps 真的查得到的具體店名或景點名。
-✅ 合法：「一蘭拉麵 道頓堀店」「金閣寺」「黑門市場」「壽司大」「蟹道樂 道頓堀本店」「東大寺南大門」
-❌ 違反（絕對禁止用「類別＋地名」當店名）：「燒鳥屋 梅田店」「京料理 京都店」「關西拉麵 梅田店」「嵐山拉麵 京都店」「燒肉 京都店」「大阪拉麵」「京都壽司」
-如果想不到真實的店名，就改推景點（type=SIGHTSEEING）而不是亂編一個聽起來像連鎖的假名字。`;
+規則：
+- 每天${actPerDay}；第一天從${arrTime}、最後天${depTime}前結束
+- type=FOOD/SIGHTSEEING/ACTIVITY/SHOPPING/HOTEL；FOOD 一定要 reservation.needed=true + 訂位方式 tips；description ${descLen}；igCaption ${igLen}
+- coordinates 絕對禁 0/0：每點填真實 lat/lng（金閣寺=35.0394,135.7292；道頓堀=34.6687,135.5018；清水寺=34.9949,135.7850）
+- 去重：整趟 ${days} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING name 不得重複（HOTEL 例外，可連住多晚）；連鎖店標分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）
+- name 必須 Google Maps 查得到：✅「一蘭拉麵 道頓堀店」「金閣寺」「黑門市場」「壽司大」「蟹道樂 道頓堀本店」；❌ 嚴禁「類別+地名」假名（「燒鳥屋 梅田店」「京料理 京都店」「關西拉麵 梅田店」「大阪拉麵」「京都壽司」）。想不到真店名就改 SIGHTSEEING，不准編
+- JSON 完整不截斷`;
 
   try {
     const resp = await fetch('/api/generate', {
@@ -935,13 +923,12 @@ function renderTab() {
   let h = '';
   (plan.itinerary || []).forEach((day, di) => {
     const isOpen = openDay === di;
-    const wx = day.weather ? `${WX[day.weather.icon]||'🌤️'} ${day.weather.temperature}` : '';
     h += `<div class="day-card" style="animation-delay:${di*0.05}s">
       <button class="day-header ${isOpen?'open':''}" onclick="toggleDay(${di})">
         <div class="day-num"><span class="day-num-label">DAY</span><span class="day-num-val">${day.dayNumber}</span></div>
         <div class="day-info">
           <div class="day-theme">${esc(day.theme || 'Day '+day.dayNumber)}</div>
-          <div class="day-meta"><span>📍${esc(day.region)}</span><span>📅${day.date}</span>${wx?`<span>${wx}</span>`:''}</div>
+          <div class="day-meta"><span>📍${esc(day.region)}</span><span>📅${day.date}</span></div>
         </div>
         <span class="day-arrow ${isOpen?'open':''}">▼</span>
       </button>`;
@@ -986,8 +973,6 @@ function renderTab() {
         const tabelogUrl = act.type === 'FOOD' ? `https://tabelog.com/rstLst/?sk=${encodeURIComponent(act.name)}` : '';
         const gReserveUrl = act.type === 'FOOD' ? `https://www.google.com/search?q=${encodeURIComponent(act.name + ' 予約 訂位')}` : '';
 
-        const actWx = act.weather ? `${WX[act.weather.icon]||'🌤️'} ${act.weather.temperature}` : '';
-
         h += `<div class="act-item">
           <div class="act-move">
             <button class="act-move-btn" onclick="moveActivity(${di},${ai},-1)" title="上移" ${ai===0?'disabled':''}>▲</button>
@@ -1003,7 +988,6 @@ function renderTab() {
             <div class="act-name">
               <a href="${spotUrl}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dashed #cbd5e1" title="Google Maps">${esc(act.name)}</a>
               ${act.ticketInfo?.required ? `<span class="act-ticket">🎫 ${esc(act.ticketInfo.priceEstimate||'')}</span>` : ''}
-              ${actWx ? `<span style="font-size:11px;color:#64748b;margin-left:4px">${actWx}</span>` : ''}
               ${stayMin ? `<span class="act-stay">⏱ ${esc(stayMin)}</span>` : ''}
             </div>
             <div class="act-desc">${esc(act.description||'')}</div>`;
