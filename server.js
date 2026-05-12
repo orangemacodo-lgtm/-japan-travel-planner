@@ -73,19 +73,21 @@ async function callGemini(prompt, maxTokens) {
 }
 
 // ── Groq API 呼叫（fallback）────────────────────────────────
+// 多模型輪替：每個模型獨立 100K TPD，撞牆會自動 fallback 到下一個。
+// 順序按品質（指令遵守度）排。Model IDs 用 /api/debug-models 驗過 Groq 上實際存在。
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'qwen/qwen3-32b',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'llama-3.1-8b-instant',
+];
+
 async function callGroq(prompt, maxTokens) {
   if (!GROQ_KEY) return { ok: false, errors: [{ model: 'groq', msg: 'GROQ_API_KEY 未設定' }] };
 
-  // 多模型輪替：每個模型獨立 100K TPD，撞牆會自動 fallback 到下一個。
-  // 順序按品質（指令遵守度）排。Model IDs 用 /api/debug-models 驗過 Groq 上實際存在。
-  const models = [
-    'llama-3.3-70b-versatile',
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'qwen/qwen3-32b',
-    'openai/gpt-oss-120b',
-    'openai/gpt-oss-20b',
-    'llama-3.1-8b-instant',
-  ];
+  const models = GROQ_MODELS;
   const errors = [];
 
   const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
@@ -391,9 +393,8 @@ app.get('/api/debug-models', async (req, res) => {
       headers: { Authorization: `Bearer ${GROQ_KEY}` },
       timeout: 10000,
     });
-    const ourModels = ['llama-3.3-70b-versatile', 'moonshotai/kimi-k2-instruct', 'qwen/qwen3-32b', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant'];
     const available = (data.data || []).map(m => m.id).sort();
-    const status = ourModels.map(id => ({ id, available: available.includes(id) }));
+    const status = GROQ_MODELS.map(id => ({ id, available: available.includes(id) }));
     res.json({ ok: true, status, allAvailable: available });
   } catch (e) {
     res.json({ ok: false, error: e.message, details: e.response?.data });
