@@ -246,9 +246,7 @@ app.post('/api/generate', async (req, res) => {
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
 - ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
 - 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準
-- 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的所有 activity.name 也必須兩兩不同，不可同一家店或同一景點在塊內任兩天出現${exclusionBlock}
-
-⚠️ 最終檢查（送出前自己核對一次）：把本塊全部 activity.name 列出來，確認彼此唯一，且不在上面【跨塊嚴禁重複】清單裡。違反這條 = 任務失敗。`;
+- 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的所有 activity.name 也必須兩兩不同，不可同一家店或同一景點在塊內任兩天出現${exclusionBlock}`;
 
         console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}, exclude=${usedNames.size}`);
         const result = await callLLMWithRetry(chunkPrompt, `Chunk ${i + 1}`);
@@ -259,6 +257,9 @@ app.post('/api/generate', async (req, res) => {
         }
 
         if (Array.isArray(parsed.itinerary)) {
+          if (parsed.itinerary.length !== chunkDays) {
+            console.warn(`[Chunk] ${i + 1} 天數異常：要求 ${chunkDays} 天，回 ${parsed.itinerary.length} 天`);
+          }
           for (const day of parsed.itinerary) {
             if (Array.isArray(day.activities)) {
               for (const act of day.activities) {
@@ -279,7 +280,14 @@ app.post('/api/generate', async (req, res) => {
       }
 
       const merged = { ...firstMeta, itinerary };
-      console.log(`[Chunk] 合併完成：${itinerary.length} 天`);
+      const allNames = itinerary.flatMap(d => (d.activities || []).map(a => a.name).filter(Boolean));
+      const counts = new Map();
+      for (const n of allNames) counts.set(n, (counts.get(n) || 0) + 1);
+      const dups = [...counts.entries()].filter(([, c]) => c > 1);
+      if (dups.length > 0) {
+        console.warn(`[Chunk] 合併後仍有 ${dups.length} 個重複 name：${dups.map(([n, c]) => `${n}×${c}`).join('、')}`);
+      }
+      console.log(`[Chunk] 合併完成：${itinerary.length} 天, 唯一活動 ${counts.size}/${allNames.length}`);
       return res.json({
         ok: true,
         text: JSON.stringify(merged),
