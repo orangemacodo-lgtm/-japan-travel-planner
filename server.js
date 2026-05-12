@@ -407,6 +407,11 @@ app.get('/api/debug-generate', async (req, res) => {
   }
 });
 
+// ── Keep-alive ping（不打 LLM，安全給 UptimeRobot 等 cron 喚醒服務用）─
+app.get('/api/ping', (req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
+
 // ── 除錯：列出 Groq 上實際可用的模型 ───────────────────────
 app.get('/api/debug-models', async (req, res) => {
   if (!GROQ_KEY) return res.json({ ok: false, error: 'GROQ_API_KEY 未設定' });
