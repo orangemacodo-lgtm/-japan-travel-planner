@@ -969,13 +969,17 @@ function renderTab() {
           }
         }
         
-        // Google Maps
+        // Google Maps — 官方 ?api=1 URL Scheme + 使用者運輸方式（driving/transit）
+        const travelMode = transport === 'car' ? 'driving' : 'transit';
         let navUrl = '';
         if (nextAct?.coordinates && act.coordinates) {
-          navUrl = `https://www.google.com/maps/dir/${act.coordinates.lat},${act.coordinates.lng}/${nextAct.coordinates.lat},${nextAct.coordinates.lng}`;
+          // origin/destination 可吃座標也可吃文字。同時塞名字 + 座標讓 Google 容易解析正確地點。
+          const originQ = encodeURIComponent(`${act.name} ${act.coordinates.lat},${act.coordinates.lng}`);
+          const destQ = encodeURIComponent(`${nextAct.name} ${nextAct.coordinates.lat},${nextAct.coordinates.lng}`);
+          navUrl = `https://www.google.com/maps/dir/?api=1&origin=${originQ}&destination=${destQ}&travelmode=${travelMode}`;
         }
-        const spotUrl = act.coordinates 
-          ? `https://www.google.com/maps/search/?api=1&query=${act.coordinates.lat},${act.coordinates.lng}` 
+        const spotUrl = act.coordinates
+          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.name + ' ' + act.coordinates.lat + ',' + act.coordinates.lng)}`
           : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(act.name + ' Japan')}`;
         
         // Tabelog + Google 訂位
