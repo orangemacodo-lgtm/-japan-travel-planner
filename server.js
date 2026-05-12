@@ -382,6 +382,23 @@ app.get('/api/debug-generate', async (req, res) => {
   }
 });
 
+// ── 除錯：列出 Groq 上實際可用的模型 ───────────────────────
+app.get('/api/debug-models', async (req, res) => {
+  if (!GROQ_KEY) return res.json({ ok: false, error: 'GROQ_API_KEY 未設定' });
+  try {
+    const { data } = await axios.get('https://api.groq.com/openai/v1/models', {
+      headers: { Authorization: `Bearer ${GROQ_KEY}` },
+      timeout: 10000,
+    });
+    const ourModels = ['llama-3.3-70b-versatile', 'moonshotai/kimi-k2-instruct', 'qwen/qwen3-32b', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant'];
+    const available = (data.data || []).map(m => m.id).sort();
+    const status = ourModels.map(id => ({ id, available: available.includes(id) }));
+    res.json({ ok: true, status, allAvailable: available });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, details: e.response?.data });
+  }
+});
+
 // ── 即時匯率（JPY→TWD）────────────────────────────────────
 app.get('/api/rate', async (req, res) => {
   try {
