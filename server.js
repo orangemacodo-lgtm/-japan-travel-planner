@@ -76,7 +76,15 @@ async function callGemini(prompt, maxTokens) {
 async function callGroq(prompt, maxTokens) {
   if (!GROQ_KEY) return { ok: false, errors: [{ model: 'groq', msg: 'GROQ_API_KEY 未設定' }] };
 
-  const models = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'llama-3.1-8b-instant'];
+  // 多模型輪替：每個模型獨立 100K TPD，撞牆會自動 fallback 到下一個。
+  // 順序按品質（指令遵守度）排：llama-3.3 最強，gpt-oss-120b 最弱但偶爾管用。
+  const models = [
+    'llama-3.3-70b-versatile',
+    'moonshotai/kimi-k2-instruct',
+    'qwen/qwen3-32b',
+    'openai/gpt-oss-120b',
+    'llama-3.1-8b-instant',
+  ];
   const errors = [];
 
   const SYSTEM_PROMPT = `你是專業的日本旅遊規劃師，必須提供「精準到名字 + 具體推薦理由」的高品質行程。
@@ -442,7 +450,7 @@ app.listen(PORT, () => {
   console.log(`🔑 Gemini Key: ${API_KEY ? '已設定 ✅' : '❌ 未設定'}`);
   console.log(`🔑 Groq Key:   ${GROQ_KEY ? '已設定 ✅' : '❌ 未設定'}`);
   console.log(`📌 主力：gemini-2.5-flash → 2.0-flash → 2.5-flash-lite`);
-  console.log(`📌 備援：llama-3.3-70b-versatile → openai/gpt-oss-120b → llama-3.1-8b-instant`);
+  console.log(`📌 備援：llama-3.3-70b → kimi-k2 → qwen3-32b → gpt-oss-120b → llama-3.1-8b`);
   console.log(`🧩 Chunking：≥6 天自動拆成 5 天/塊，含 rate-limit 自動 retry`);
   console.log(`🔧 測試：/api/test | 除錯：/api/debug-generate\n`);
 });
