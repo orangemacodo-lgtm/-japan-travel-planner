@@ -249,16 +249,27 @@ app.post('/api/generate', async (req, res) => {
 - 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的所有 activity.name 也必須兩兩不同，不可同一家店或同一景點在塊內任兩天出現${exclusionBlock}`;
 
         console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}, exclude=${usedNames.size}`);
-        const result = await callLLMWithRetry(chunkPrompt, `Chunk ${i + 1}`);
-        const parsed = extractJSON(result.text);
 
-        if (!parsed) {
-          throw new Error(`Chunk ${i + 1} (days ${start}-${end}) JSON 解析失敗`);
+        let result;
+        let parsed;
+        const MAX_LEN_RETRY = 1;
+        for (let attempt = 0; attempt <= MAX_LEN_RETRY; attempt++) {
+          const lengthNag = attempt === 0
+            ? ''
+            : `\n\n【上一次嘗試只回了 ${parsed?.itinerary?.length ?? 0} 天，但本塊需要 ${chunkDays} 天】請務必這次的 itinerary 陣列剛好 ${chunkDays} 個元素，dayNumber 從 ${start} 到 ${end}，每天 3-4 個活動。不可只回一天就停。`;
+          result = await callLLMWithRetry(chunkPrompt + lengthNag, `Chunk ${i + 1}${attempt > 0 ? ` retry${attempt}` : ''}`);
+          parsed = extractJSON(result.text);
+          if (!parsed) {
+            throw new Error(`Chunk ${i + 1} (days ${start}-${end}) JSON 解析失敗`);
+          }
+          const got = Array.isArray(parsed.itinerary) ? parsed.itinerary.length : 0;
+          if (got >= chunkDays) break;
+          console.warn(`[Chunk] ${i + 1} attempt ${attempt + 1}: 要求 ${chunkDays} 天，回 ${got} 天${attempt < MAX_LEN_RETRY ? '，重試' : '，放棄'}`);
         }
 
         if (Array.isArray(parsed.itinerary)) {
           if (parsed.itinerary.length !== chunkDays) {
-            console.warn(`[Chunk] ${i + 1} 天數異常：要求 ${chunkDays} 天，回 ${parsed.itinerary.length} 天`);
+            console.warn(`[Chunk] ${i + 1} 最終天數仍異常：要求 ${chunkDays} 天，得 ${parsed.itinerary.length} 天`);
           }
           for (const day of parsed.itinerary) {
             if (Array.isArray(day.activities)) {
