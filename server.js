@@ -1,14 +1,34 @@
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
 
+// Render proxies through its load balancer, so trust X-Forwarded-For for real client IPs.
+app.set('trust proxy', 1);
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '1mb' }));
+
+const generateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: '請求太頻繁，請等 10 分鐘再試。每 10 分鐘最多 5 次行程生成。' },
+});
+
+const suggestLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: '請求太頻繁，請稍後再試。' },
+});
 
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
@@ -214,7 +234,7 @@ async function callLLMWithRetry(prompt, label = '') {
 }
 
 // ── 主 API（含 chunking：N≥6 天自動拆分）────────────────────
-app.post('/api/generate', async (req, res) => {
+app.post('/api/generate', generateLimiter, async (req, res) => {
   if (!API_KEY && !GROQ_KEY) {
     return res.status(500).json({ ok: false, error: '未設定 GEMINI_API_KEY 或 GROQ_API_KEY' });
   }
@@ -427,7 +447,7 @@ app.get('/api/rate', async (req, res) => {
 });
 
 // ── 附近景點推薦 ────────────────────────────────────────────
-app.post('/api/suggest', async (req, res) => {
+app.post('/api/suggest', suggestLimiter, async (req, res) => {
   if (!API_KEY && !GROQ_KEY) return res.status(500).json({ ok: false, error: '未設定 API KEY' });
   try {
     const { region, category, lat, lng, existingNames, date } = req.body;

@@ -731,12 +731,14 @@ ${requests?'需求：'+requests:''}
 "weather":{"condition":"天氣","temperature":"15~22°C","icon":"sunny"},
 "activities":[{"time":"14:00","name":"景點名","description":"${descLen}描述",
 "igCaption":"${igLen}","highlights":["亮點"],"type":"SIGHTSEEING",
-"coordinates":{"lat":34.69,"lng":135.50},
+"coordinates":{"lat":0,"lng":0},
 "ticketInfo":{"required":false,"priceEstimate":"免費"},
 "reservation":{"needed":false,"tips":""},
 "travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km"}}]}]}
 
-規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、真實coordinates、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷
+規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷
+
+座標規則：coordinates 的 lat/lng **絕對不可以是 0/0 或範例值**。每個 activity 都要填它真實的緯度經度（金閣寺=35.0394,135.7292；道頓堀=34.6687,135.5018；清水寺=34.9949,135.7850 諸如此類）。地圖上每個點都應該落在該景點實際位置，不可全部疊在同一處。
 
 去重規則（重要，只針對 type=SIGHTSEEING / FOOD / ACTIVITY / SHOPPING）：整趟 ${days} 天行程中，這些類型的 activity.name **不得重複出現**。同一家拉麵店、同一個神社、同一個市場都不可在不同天出現第二次。連鎖店若真的不同分店，必須在 name 標明分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）。
 ⚠️ 例外：type=HOTEL 允許連續多天重複出現（旅客住同一家飯店是常態，不算違反去重）。
