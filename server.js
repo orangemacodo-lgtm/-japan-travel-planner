@@ -225,6 +225,7 @@ app.post('/api/generate', async (req, res) => {
       console.log(`[Chunk] ${totalDays} 天 → ${chunks.length} 塊（每塊最多 ${CHUNK_SIZE} 天）`);
 
       const itinerary = [];
+      const usedNames = new Set();
       let firstMeta = null;
       let usedProvider = null;
       let usedModel = null;
@@ -234,15 +235,19 @@ app.post('/api/generate', async (req, res) => {
         const chunkDays = end - start + 1;
         const isFirst = i === 0;
 
+        const exclusionBlock = usedNames.size > 0
+          ? `\n- 【嚴禁重複】下列景點/餐廳/活動已經在前面幾天用過，**絕對不可再出現**（連同義改名也不行）：\n  ${[...usedNames].join('、')}`
+          : '';
+
         const chunkPrompt = `${prompt}
 
 【CHUNKING MODE — 此次只生成第 ${start} 到第 ${end} 天】
 - itinerary 陣列長度必須剛好 = ${chunkDays}
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
 - ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
-- 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準`;
+- 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準${exclusionBlock}`;
 
-        console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}`);
+        console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}, exclude=${usedNames.size}`);
         const result = await callLLMWithRetry(chunkPrompt, `Chunk ${i + 1}`);
         const parsed = extractJSON(result.text);
 
@@ -251,6 +256,13 @@ app.post('/api/generate', async (req, res) => {
         }
 
         if (Array.isArray(parsed.itinerary)) {
+          for (const day of parsed.itinerary) {
+            if (Array.isArray(day.activities)) {
+              for (const act of day.activities) {
+                if (act?.name) usedNames.add(act.name);
+              }
+            }
+          }
           itinerary.push(...parsed.itinerary);
         } else {
           console.error(`[Chunk] ${i + 1} 沒有 itinerary 陣列`);

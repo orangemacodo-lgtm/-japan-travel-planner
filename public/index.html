@@ -736,7 +736,9 @@ ${requests?'需求：'+requests:''}
 "reservation":{"needed":false,"tips":""},
 "travelToNext":{"mode":"${isCar?'car':'train'}","duration":"15分","distance":"3km"}}]}]}
 
-規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、真實coordinates、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷`;
+規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、真實coordinates、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷
+
+去重規則（重要）：整趟 ${days} 天行程中，每個 activity.name（含景點、餐廳、活動）**不得重複出現**。每天主題與活動都要不一樣，不可同一家拉麵店出現兩次、同一個神社走兩次。連鎖店若真的不同分店，必須在 name 標明分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）。`;
 
   try {
     const resp = await fetch('/api/generate', {
@@ -1186,7 +1188,10 @@ async function fetchSuggestions() {
 
   const day = plan.itinerary[sugDayIdx];
   const lastAct = day.activities?.[day.activities.length - 1];
-  const existingNames = day.activities?.map(a => a.name) || [];
+  // 蒐集整趟行程所有活動名稱，避免推薦到其他天已有的景點
+  const existingNames = (plan.itinerary || [])
+    .flatMap(d => d.activities?.map(a => a.name) || [])
+    .filter(Boolean);
 
   try {
     const resp = await fetch('/api/suggest', {
