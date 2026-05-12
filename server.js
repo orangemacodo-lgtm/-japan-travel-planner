@@ -59,6 +59,45 @@ function extractJSON(text) {
   return null;
 }
 
+// ── FOOD name 真實性偵測（heuristic）───────────────────────
+// 已知日本連鎖（漢字寫法常見，不一定含假名，故 whitelist）
+const KNOWN_CHAINS = [
+  '一蘭', '一風堂', '金龍', '蟹道樂', '蟹道楽', 'かに道楽', '自由軒', '壽司大', '寿司大', '次郎',
+  'すき家', 'スシロー', 'くら寿司', 'はま寿司', '丸亀製麺', 'CoCo壱', 'いきなりステーキ',
+  '吉野家', '松屋', 'モスバーガー', 'ロッテリア', 'てんや', '幸楽苑', '王将',
+  'だるま', '自由軒', '銀のあん', '魚べい', '無添くら寿司', '大戸屋',
+  'Pablo', 'Bills', 'Starbucks', 'スターバックス',
+  '梅田', // bare 梅田 isn't a restaurant — caught by other rules but kept for known venue
+  '黑門市場', '錦市場', '築地', // markets often confused for FOOD type
+];
+const HIRAGANA = /[぀-ゟ]/;
+const KATAKANA = /[゠-ヿ]/;
+const ROMAN = /[A-Za-z]/;
+function isSuspectFoodName(name) {
+  if (!name || typeof name !== 'string') return true;
+  const n = name.trim();
+  // (a) 含日文假名 → OK
+  if (HIRAGANA.test(n) || KATAKANA.test(n)) return false;
+  // (b) 含英文/羅馬字 → 通常是國際品牌，OK
+  if (ROMAN.test(n)) return false;
+  // (c) 已知連鎖 → OK
+  if (KNOWN_CHAINS.some(c => n.includes(c))) return false;
+  // 否則純中文形容詞/泛指 → 高機率是 LLM 編的
+  return true;
+}
+function annotateSuspectFood(plan) {
+  const suspects = [];
+  for (const day of plan?.itinerary || []) {
+    for (const act of day?.activities || []) {
+      if (act?.type === 'FOOD' && isSuspectFoodName(act.name)) {
+        act._suspect = true;
+        suspects.push(`Day ${day.dayNumber}: ${act.name}`);
+      }
+    }
+  }
+  return suspects;
+}
+
 // ── Gemini API 呼叫 ─────────────────────────────────────────
 async function callGemini(prompt, maxTokens) {
   if (!API_KEY) return { ok: false, errors: [{ model: 'gemini', msg: 'GEMINI_API_KEY 未設定' }] };
@@ -310,6 +349,10 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
         console.warn(`[Chunk] 合併後仍有 ${dups.length} 個非 HOTEL 重複 name：${dups.map(([n, c]) => `${n}×${c}`).join('、')}`);
       }
       console.log(`[Chunk] 合併完成：${itinerary.length} 天, 非 HOTEL 唯一活動 ${counts.size}/${allNames.length}`);
+      const suspects = annotateSuspectFood(merged);
+      if (suspects.length > 0) {
+        console.warn(`[Food] ${suspects.length} 個可疑 FOOD name：${suspects.join('、')}`);
+      }
       stats.generate.ok++;
       return res.json({
         ok: true,
@@ -319,6 +362,7 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
         chunked: true,
         totalDays: itinerary.length,
         chunkCount: chunks.length,
+        suspectFoodCount: suspects.length,
       });
     }
 
@@ -327,8 +371,10 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
     const parsed = extractJSON(text);
 
     if (parsed) {
+      const suspects = annotateSuspectFood(parsed);
+      if (suspects.length > 0) console.warn(`[Food] ${suspects.length} 個可疑 FOOD name：${suspects.join('、')}`);
       stats.generate.ok++;
-      return res.json({ ok: true, text: JSON.stringify(parsed), provider, model });
+      return res.json({ ok: true, text: JSON.stringify(parsed), provider, model, suspectFoodCount: suspects.length });
     }
 
     stats.generate.fail++;

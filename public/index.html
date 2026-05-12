@@ -733,7 +733,14 @@ JSON 結構（每欄都要有，不可省略）：
 - type=FOOD/SIGHTSEEING/ACTIVITY/SHOPPING/HOTEL；FOOD 一定要 reservation.needed=true + 訂位方式 tips；description ${descLen}；igCaption ${igLen}
 - coordinates 絕對禁 0/0：每點填真實 lat/lng（金閣寺=35.0394,135.7292；道頓堀=34.6687,135.5018；清水寺=34.9949,135.7850）
 - 去重：整趟 ${days} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING name 不得重複（HOTEL 例外，可連住多晚）；連鎖店標分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）
-- name 必須 Google Maps 查得到：✅「一蘭拉麵 道頓堀店」「金閣寺」「黑門市場」「壽司大」「蟹道樂 道頓堀本店」；❌ 嚴禁「類別+地名」假名（「燒鳥屋 梅田店」「京料理 京都店」「關西拉麵 梅田店」「大阪拉麵」「京都壽司」）。想不到真店名就改 SIGHTSEEING，不准編
+- name 必須 Google Maps 查得到的真實名稱：✅「金閣寺」「黑門市場」「東大寺南大門」「壽司大」「蟹道樂 道頓堀本店」
+- 【FOOD 餐廳鐵則】type=FOOD 的 name 必須是「日本實際店招牌寫法」，至少符合下列其中一條：
+  (a) 包含日文假名（ひらがな或片假名）：例「一蘭ラーメン 道頓堀店」「すき家」「丸亀製麺」「いきなりステーキ」「だるま」「銀のあん」「魚べい」「無添くら寿司」
+  (b) 是知名連鎖全漢字寫法：例「金龍拉麵」「蟹道樂 道頓堀本店」「自由軒」「壽司大」
+  (c) 用全英文/羅馬拼音的店名：例「Pablo Cheese Tart」「Bills Omotesando」
+  ❌ 嚴禁純中文形容詞/泛指（一律當作 LLM 編的）：「大阪燒肉」「京都壽司」「京都拉麵」「關西炭火燒鳥」「大阪夜生活」「大阪晚餐」「京都酒吧」「京料理 京都店」「京都風味小吃」「燒鳥屋 梅田店」
+  ❌ 嚴禁「類別+地名+店」這種偷懶後綴：「拉麵 京都店」「燒肉 大阪店」「壽司 心齋橋店」
+- 想不到真實店名就改 type=SIGHTSEEING（例如「黑門市場」「錦市場」），絕對不要假裝有家叫「大阪燒肉」「京都壽司」的店
 - JSON 完整不截斷`;
 
   try {
@@ -987,6 +994,7 @@ function renderTab() {
           <div class="act-content">
             <div class="act-name">
               <a href="${spotUrl}" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dashed #cbd5e1" title="Google Maps">${esc(act.name)}</a>
+              ${act._suspect ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-size:10px;font-weight:700;margin-left:6px" title="AI 可能編造的店名，請手動 Google Maps 驗證">⚠️ 待驗證</span>` : ''}
               ${act.ticketInfo?.required ? `<span class="act-ticket">🎫 ${esc(act.ticketInfo.priceEstimate||'')}</span>` : ''}
               ${stayMin ? `<span class="act-stay">⏱ ${esc(stayMin)}</span>` : ''}
             </div>
