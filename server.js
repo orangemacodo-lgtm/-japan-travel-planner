@@ -236,7 +236,7 @@ app.post('/api/generate', async (req, res) => {
         const isFirst = i === 0;
 
         const exclusionBlock = usedNames.size > 0
-          ? `\n- 【嚴禁重複】下列景點/餐廳/活動已經在前面幾天用過，**絕對不可再出現**（連同義改名也不行）：\n  ${[...usedNames].join('、')}`
+          ? `\n- 【跨塊嚴禁重複】下列景點/餐廳/活動已經在前面幾天用過，**絕對不可再出現**（連同義改名也不行）：\n  ${[...usedNames].join('、')}`
           : '';
 
         const chunkPrompt = `${prompt}
@@ -245,7 +245,10 @@ app.post('/api/generate', async (req, res) => {
 - itinerary 陣列長度必須剛好 = ${chunkDays}
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
 - ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
-- 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準${exclusionBlock}`;
+- 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準
+- 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的所有 activity.name 也必須兩兩不同，不可同一家店或同一景點在塊內任兩天出現${exclusionBlock}
+
+⚠️ 最終檢查（送出前自己核對一次）：把本塊全部 activity.name 列出來，確認彼此唯一，且不在上面【跨塊嚴禁重複】清單裡。違反這條 = 任務失敗。`;
 
         console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}, exclude=${usedNames.size}`);
         const result = await callLLMWithRetry(chunkPrompt, `Chunk ${i + 1}`);
