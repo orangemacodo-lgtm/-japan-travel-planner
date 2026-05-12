@@ -738,7 +738,8 @@ ${requests?'需求：'+requests:''}
 
 規則：每天${actPerDay}、第一天從${arrTime}、最後天${depTime}前結束、type=FOOD/SIGHTSEEING/ACTIVITY/HOTEL、真實coordinates、餐廳具體店名+推薦菜、FOOD的reservation.needed=true+tips寫訂位方式、description精簡、JSON完整不截斷
 
-去重規則（重要）：整趟 ${days} 天行程中，每個 activity.name（含景點、餐廳、活動）**不得重複出現**。每天主題與活動都要不一樣，不可同一家拉麵店出現兩次、同一個神社走兩次。連鎖店若真的不同分店，必須在 name 標明分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）。
+去重規則（重要，只針對 type=SIGHTSEEING / FOOD / ACTIVITY / SHOPPING）：整趟 ${days} 天行程中，這些類型的 activity.name **不得重複出現**。同一家拉麵店、同一個神社、同一個市場都不可在不同天出現第二次。連鎖店若真的不同分店，必須在 name 標明分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）。
+⚠️ 例外：type=HOTEL 允許連續多天重複出現（旅客住同一家飯店是常態，不算違反去重）。
 
 店名規則（極重要，違反等於任務失敗）：activity.name 必須是 Google Maps 真的查得到的具體店名或景點名。
 ✅ 合法：「一蘭拉麵 道頓堀店」「金閣寺」「黑門市場」「壽司大」「蟹道樂 道頓堀本店」「東大寺南大門」

@@ -247,7 +247,7 @@ app.post('/api/generate', async (req, res) => {
         const isFirst = i === 0;
 
         const exclusionBlock = usedNames.size > 0
-          ? `\n- 【跨塊嚴禁重複】下列景點/餐廳/活動已經在前面幾天用過，**絕對不可再出現**（連同義改名也不行）：\n  ${[...usedNames].join('、')}`
+          ? `\n- 【跨塊嚴禁重複】下列「景點/餐廳/活動/購物」（type 為 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING）已經在前面幾天用過，**絕對不可再出現**（連同義改名也不行）：\n  ${[...usedNames].join('、')}\n  ⚠️ 此清單不含 HOTEL，因為飯店連住多晚是合理的。`
           : '';
 
         const chunkPrompt = `${prompt}
@@ -257,7 +257,7 @@ app.post('/api/generate', async (req, res) => {
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
 - ${isFirst ? '其他欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '其他欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
 - 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準
-- 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的所有 activity.name 也必須兩兩不同，不可同一家店或同一景點在塊內任兩天出現${exclusionBlock}`;
+- 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 類 activity.name 必須兩兩不同。HOTEL 類例外可重複。${exclusionBlock}`;
 
         console.log(`[Chunk] ${i + 1}/${chunks.length}: days ${start}-${end}, exclude=${usedNames.size}`);
 
@@ -285,7 +285,8 @@ app.post('/api/generate', async (req, res) => {
           for (const day of parsed.itinerary) {
             if (Array.isArray(day.activities)) {
               for (const act of day.activities) {
-                if (act?.name) usedNames.add(act.name);
+                // 飯店允許重複出現（連住多晚常態），不納入跨塊排除清單
+                if (act?.name && act?.type !== 'HOTEL') usedNames.add(act.name);
               }
             }
           }
@@ -302,14 +303,15 @@ app.post('/api/generate', async (req, res) => {
       }
 
       const merged = { ...firstMeta, itinerary };
-      const allNames = itinerary.flatMap(d => (d.activities || []).map(a => a.name).filter(Boolean));
+      // 統計時排除 HOTEL（連住合理），只看景點/餐廳/活動的重複狀況
+      const allNames = itinerary.flatMap(d => (d.activities || []).filter(a => a?.type !== 'HOTEL').map(a => a.name).filter(Boolean));
       const counts = new Map();
       for (const n of allNames) counts.set(n, (counts.get(n) || 0) + 1);
       const dups = [...counts.entries()].filter(([, c]) => c > 1);
       if (dups.length > 0) {
-        console.warn(`[Chunk] 合併後仍有 ${dups.length} 個重複 name：${dups.map(([n, c]) => `${n}×${c}`).join('、')}`);
+        console.warn(`[Chunk] 合併後仍有 ${dups.length} 個非 HOTEL 重複 name：${dups.map(([n, c]) => `${n}×${c}`).join('、')}`);
       }
-      console.log(`[Chunk] 合併完成：${itinerary.length} 天, 唯一活動 ${counts.size}/${allNames.length}`);
+      console.log(`[Chunk] 合併完成：${itinerary.length} 天, 非 HOTEL 唯一活動 ${counts.size}/${allNames.length}`);
       return res.json({
         ok: true,
         text: JSON.stringify(merged),
