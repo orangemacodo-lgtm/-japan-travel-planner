@@ -425,6 +425,8 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
 });
 
 // ── 除錯：只跑 Gemini，回傳每個 model 的原始錯誤 ─────────────
+//   GET  /api/debug-gemini             → 簡單 ping
+//   POST /api/debug-gemini  {prompt}   → 用任意 prompt 試 Gemini chain
 app.get('/api/debug-gemini', async (req, res) => {
   const keyPresent = !!API_KEY;
   const keyPreview = API_KEY ? `${API_KEY.slice(0, 4)}…${API_KEY.slice(-4)} (len=${API_KEY.length})` : null;
@@ -433,6 +435,25 @@ app.get('/api/debug-gemini', async (req, res) => {
     res.json({ keyPresent, keyPreview, result: r });
   } catch (e) {
     res.json({ keyPresent, keyPreview, error: e.message, stack: (e.stack || '').split('\n').slice(0, 5) });
+  }
+});
+app.post('/api/debug-gemini', async (req, res) => {
+  const prompt = req.body?.prompt;
+  if (!prompt) return res.status(400).json({ ok: false, error: '缺少 prompt' });
+  try {
+    const r = await callGemini(prompt, req.body?.maxTokens);
+    // 回傳完整錯誤陣列 + 第一個成功的 model（若有）
+    res.json({
+      ok: r.ok,
+      provider: r.provider,
+      model: r.model,
+      finishReason: r.finishReason,
+      textLength: r.text?.length ?? 0,
+      textPreview: r.text ? r.text.substring(0, 200) : null,
+      errors: r.errors || [],
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, details: e.details || null });
   }
 });
 
