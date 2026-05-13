@@ -424,6 +424,18 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
   }
 });
 
+// ── 除錯：只跑 Gemini，回傳每個 model 的原始錯誤 ─────────────
+app.get('/api/debug-gemini', async (req, res) => {
+  const keyPresent = !!API_KEY;
+  const keyPreview = API_KEY ? `${API_KEY.slice(0, 4)}…${API_KEY.slice(-4)} (len=${API_KEY.length})` : null;
+  try {
+    const r = await callGemini('回傳 JSON：{"status":"ok"}。只要 JSON。', 128);
+    res.json({ keyPresent, keyPreview, result: r });
+  } catch (e) {
+    res.json({ keyPresent, keyPreview, error: e.message, stack: (e.stack || '').split('\n').slice(0, 5) });
+  }
+});
+
 // ── 測試 API 連線 ───────────────────────────────────────────
 app.get('/api/test', async (req, res) => {
   if (!API_KEY && !GROQ_KEY) return res.json({ ok: false, error: '未設定 GEMINI_API_KEY 或 GROQ_API_KEY' });
