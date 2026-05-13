@@ -304,7 +304,7 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
         for (let attempt = 0; attempt <= MAX_LEN_RETRY; attempt++) {
           const lengthNag = attempt === 0
             ? ''
-            : `\n\n【上一次嘗試只回了 ${parsed?.itinerary?.length ?? 0} 天，但本塊需要 ${chunkDays} 天】請務必這次的 itinerary 陣列剛好 ${chunkDays} 個元素，dayNumber 從 ${start} 到 ${end}，每天 3-4 個活動。不可只回一天就停。`;
+            : `\n\n【上一次嘗試只回了 ${parsed?.itinerary?.length ?? 0} 天，但本塊需要 ${chunkDays} 天】請務必這次的 itinerary 陣列剛好 ${chunkDays} 個元素，dayNumber 從 ${start} 到 ${end}，每天 7+ 個活動（其中 SIGHTSEEING 至少 4 個）。不可只回一天就停。`;
           result = await callLLMWithRetry(chunkPrompt + lengthNag, `Chunk ${i + 1}${attempt > 0 ? ` retry${attempt}` : ''}`);
           parsed = extractJSON(result.text);
           if (!parsed) {
