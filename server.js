@@ -98,6 +98,22 @@ function annotateSuspectFood(plan) {
   return suspects;
 }
 
+// ── 每日 SIGHTSEEING ≥ 4 硬規則檢查 ──
+const MIN_SIGHTSEEING_PER_DAY = 4;
+function findSightseeingShortfall(plan) {
+  const shorts = [];
+  for (const day of plan?.itinerary || []) {
+    const cnt = (day.activities || []).filter(a => a?.type === 'SIGHTSEEING').length;
+    if (cnt < MIN_SIGHTSEEING_PER_DAY) shorts.push({ dayNumber: day.dayNumber, count: cnt });
+  }
+  return shorts;
+}
+function buildSightseeingNag(shorts) {
+  if (!shorts?.length) return '';
+  const list = shorts.map(s => `Day ${s.dayNumber}(只有 ${s.count} 個)`).join('、');
+  return `\n\n【上次違反硬規則】${list} 的 type=SIGHTSEEING 不到 ${MIN_SIGHTSEEING_PER_DAY} 個。請重新生成，每天 type=SIGHTSEEING 至少 ${MIN_SIGHTSEEING_PER_DAY} 個；若想不到就把 ACTIVITY/SHOPPING 改成 SIGHTSEEING 補齊。`;
+}
+
 // ── Gemini API 呼叫 ─────────────────────────────────────────
 async function callGemini(prompt, maxTokens) {
   if (!API_KEY) return { ok: false, errors: [{ model: 'gemini', msg: 'GEMINI_API_KEY 未設定' }] };
@@ -302,17 +318,20 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
         let parsed;
         const MAX_LEN_RETRY = 1;
         for (let attempt = 0; attempt <= MAX_LEN_RETRY; attempt++) {
-          const lengthNag = attempt === 0
-            ? ''
-            : `\n\n【上一次嘗試只回了 ${parsed?.itinerary?.length ?? 0} 天，但本塊需要 ${chunkDays} 天】請務必這次的 itinerary 陣列剛好 ${chunkDays} 個元素，dayNumber 從 ${start} 到 ${end}，每天 7+ 個活動（其中 SIGHTSEEING 至少 4 個）。不可只回一天就停。`;
-          result = await callLLMWithRetry(chunkPrompt + lengthNag, `Chunk ${i + 1}${attempt > 0 ? ` retry${attempt}` : ''}`);
+          const gotSoFar = parsed?.itinerary?.length ?? 0;
+          const dayShortageNag = (attempt > 0 && gotSoFar < chunkDays)
+            ? `\n\n【上一次嘗試只回了 ${gotSoFar} 天，但本塊需要 ${chunkDays} 天】請務必這次的 itinerary 陣列剛好 ${chunkDays} 個元素，dayNumber 從 ${start} 到 ${end}，每天 7+ 個活動（其中 SIGHTSEEING 至少 4 個）。不可只回一天就停。`
+            : '';
+          const sightNag = attempt > 0 ? buildSightseeingNag(findSightseeingShortfall(parsed)) : '';
+          result = await callLLMWithRetry(chunkPrompt + dayShortageNag + sightNag, `Chunk ${i + 1}${attempt > 0 ? ` retry${attempt}` : ''}`);
           parsed = extractJSON(result.text);
           if (!parsed) {
             throw new Error(`Chunk ${i + 1} (days ${start}-${end}) JSON 解析失敗`);
           }
           const got = Array.isArray(parsed.itinerary) ? parsed.itinerary.length : 0;
-          if (got >= chunkDays) break;
-          console.warn(`[Chunk] ${i + 1} attempt ${attempt + 1}: 要求 ${chunkDays} 天，回 ${got} 天${attempt < MAX_LEN_RETRY ? '，重試' : '，放棄'}`);
+          const shorts = findSightseeingShortfall(parsed);
+          if (got >= chunkDays && shorts.length === 0) break;
+          console.warn(`[Chunk] ${i + 1} attempt ${attempt + 1}: 要求 ${chunkDays} 天/回 ${got}，SIGHTSEEING 不足天數=${shorts.length}${attempt < MAX_LEN_RETRY ? '，重試' : '，放棄'}`);
         }
 
         if (Array.isArray(parsed.itinerary)) {
@@ -366,9 +385,23 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
       });
     }
 
-    // 單次呼叫（≤5 天）
-    const { provider, model, text, finishReason } = await callLLM(prompt);
-    const parsed = extractJSON(text);
+    // 單次呼叫（≤5 天）— 含 SIGHTSEEING ≥4 驗證重試
+    let parsed = null;
+    let provider, model, text, finishReason;
+    const SINGLE_MAX_RETRY = 1;
+    for (let attempt = 0; attempt <= SINGLE_MAX_RETRY; attempt++) {
+      const sightNag = attempt > 0 ? buildSightseeingNag(findSightseeingShortfall(parsed)) : '';
+      ({ provider, model, text, finishReason } = await callLLM(prompt + sightNag));
+      parsed = extractJSON(text);
+      if (!parsed) break;
+      const shorts = findSightseeingShortfall(parsed);
+      if (shorts.length === 0) break;
+      if (attempt < SINGLE_MAX_RETRY) {
+        console.warn(`[Sightseeing] 重試：${shorts.map(s => `Day${s.dayNumber}=${s.count}`).join(',')}`);
+      } else {
+        console.warn(`[Sightseeing] 重試後仍不足：${shorts.map(s => `Day${s.dayNumber}=${s.count}`).join(',')}`);
+      }
+    }
 
     if (parsed) {
       const suspects = annotateSuspectFood(parsed);
