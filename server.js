@@ -37,7 +37,12 @@ const stats = {
   suggest: { ok: 0, fail: 0 },
   modelHits: {},
   modelFails: {},
+  lastFailures: [], // 最近 10 次失敗的 {ts, provider, model, msg}
 };
+function recordModelFailure(provider, model, msg) {
+  stats.lastFailures.unshift({ ts: new Date().toISOString(), provider, model, msg: String(msg).slice(0, 300) });
+  if (stats.lastFailures.length > 10) stats.lastFailures.pop();
+}
 
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
@@ -143,17 +148,21 @@ async function callGemini(prompt, maxTokens) {
         console.error(`[Gemini] ${model}: ${msg}`);
         errors.push({ model, msg });
         stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+        recordModelFailure('gemini', model, msg);
         continue;
       }
 
       console.log(`[Gemini] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
       stats.modelHits[model] = (stats.modelHits[model] || 0) + 1;
-      return { ok: true, provider: 'gemini', model, text, finishReason };
+      return { ok: true, provider: 'gemini', model, text, finishReason, priorErrors: errors };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
-      console.error(`[Gemini] ${model} 失敗: ${msg}`);
-      errors.push({ model, msg });
+      const status = e.response?.status || null;
+      const detailMsg = status ? `HTTP ${status} - ${msg}` : msg;
+      console.error(`[Gemini] ${model} 失敗: ${detailMsg}`);
+      errors.push({ model, msg: detailMsg });
       stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+      recordModelFailure('gemini', model, detailMsg);
     }
   }
   return { ok: false, errors };
@@ -208,6 +217,7 @@ async function callGroq(prompt, maxTokens) {
         console.error(`[Groq] ${model}: ${msg}`);
         errors.push({ model, msg });
         stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+        recordModelFailure('groq', model, msg);
         continue;
       }
 
@@ -216,9 +226,12 @@ async function callGroq(prompt, maxTokens) {
       return { ok: true, provider: 'groq', model, text, finishReason };
     } catch (e) {
       const msg = e.response?.data?.error?.message || e.message;
-      console.error(`[Groq] ${model} 失敗: ${msg}`);
-      errors.push({ model, msg });
+      const status = e.response?.status || null;
+      const detailMsg = status ? `HTTP ${status} - ${msg}` : msg;
+      console.error(`[Groq] ${model} 失敗: ${detailMsg}`);
+      errors.push({ model, msg: detailMsg });
       stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+      recordModelFailure('groq', model, detailMsg);
     }
   }
   return { ok: false, errors };
@@ -516,6 +529,7 @@ app.get('/api/stats', (req, res) => {
     suggest: stats.suggest,
     modelHits: stats.modelHits,
     modelFails: stats.modelFails,
+    lastFailures: stats.lastFailures,
   });
 });
 
