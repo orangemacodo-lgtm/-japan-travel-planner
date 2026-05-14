@@ -177,6 +177,14 @@ async function callGemini(prompt, maxTokens) {
         recordModelFailure('gemini', model, msg);
         continue;
       }
+      if (finishReason === 'MAX_TOKENS') {
+        const msg = `回應被截斷 (finishReason: MAX_TOKENS, 字數=${text.length})`;
+        console.error(`[Gemini] ${model}: ${msg}`);
+        errors.push({ model, msg });
+        stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+        recordModelFailure('gemini', model, msg);
+        continue;
+      }
 
       console.log(`[Gemini] ${model} 成功，${text.length} 字 (finishReason: ${finishReason})`);
       stats.modelHits[model] = (stats.modelHits[model] || 0) + 1;
@@ -226,7 +234,7 @@ async function callGroq(prompt, maxTokens) {
           { role: 'user', content: prompt },
         ],
         temperature: 0.3,
-        max_tokens: Math.min(maxTokens || 4500, 4500),
+        max_tokens: Math.min(maxTokens || 8000, 8000),
         response_format: { type: 'json_object' },
       }, {
         headers: {
@@ -241,6 +249,14 @@ async function callGroq(prompt, maxTokens) {
 
       if (!text) {
         const msg = `回應為空 (finish_reason: ${finishReason})`;
+        console.error(`[Groq] ${model}: ${msg}`);
+        errors.push({ model, msg });
+        stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
+        recordModelFailure('groq', model, msg);
+        continue;
+      }
+      if (finishReason === 'length') {
+        const msg = `回應被截斷 (finish_reason: length, 字數=${text.length})`;
         console.error(`[Groq] ${model}: ${msg}`);
         errors.push({ model, msg });
         stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
@@ -317,8 +333,8 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
 
     const dayMatch = prompt.match(/(\d+)\s*天/);
     const totalDays = dayMatch ? parseInt(dayMatch[1], 10) : 0;
-    const CHUNK_THRESHOLD = 6;
-    const CHUNK_SIZE = 5;
+    const CHUNK_THRESHOLD = 5;
+    const CHUNK_SIZE = 4;
 
     if (totalDays >= CHUNK_THRESHOLD) {
       const chunks = [];
