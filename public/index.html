@@ -713,7 +713,7 @@ async function generate() {
 
   // ── 依天數調整 prompt 複雜度 ──
   const isLong = days > 4;
-  const actPerDay = isLong ? '7（早+景+景+午+景+景+晚）' : '8-9（三餐+至少4景點+1選配）';
+  const actPerDay = isLong ? '6（早+景+午+景+景+晚）' : '7-8（三餐+至少3景點+1選配）';
   const descLen = isLong ? '5字內' : '10字內';
   const igLen = isLong ? '10字內有emoji' : '1-2句有emoji像網紅';
 
@@ -730,7 +730,7 @@ JSON 結構（每欄都要有，不可省略）：
 
 規則：
 - 每天${actPerDay}；第一天從${arrTime}、最後天${depTime}前結束
-- 【硬規則】每天 type=SIGHTSEEING 至少 4 個，少於 4 視為違規必須重排；若想不到就把 ACTIVITY/SHOPPING 改成 SIGHTSEEING 補齊（HOTEL 不算）
+- 【硬規則】每天 type=SIGHTSEEING 至少 3 個，少於 3 視為違規必須重排；若想不到就把 ACTIVITY/SHOPPING 改成 SIGHTSEEING 補齊（HOTEL 不算）
 - type=FOOD/SIGHTSEEING/ACTIVITY/SHOPPING/HOTEL；FOOD 一定要 reservation.needed=true + 訂位方式 tips；description ${descLen}；igCaption ${igLen}
 - coordinates 絕對禁 0/0：每點填真實 lat/lng（金閣寺=35.0394,135.7292；道頓堀=34.6687,135.5018；清水寺=34.9949,135.7850）
 - 去重：整趟 ${days} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING name 不得重複（HOTEL 例外，可連住多晚）；連鎖店標分店（例：「一蘭拉麵 道頓堀店」vs「一蘭拉麵 京都八幡店」）
