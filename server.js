@@ -44,6 +44,26 @@ function recordModelFailure(provider, model, msg) {
   if (stats.lastFailures.length > 10) stats.lastFailures.pop();
 }
 
+// ── Quota-aware cooldown：429 後該 model 暫停 1 hr，避免每次都浪費 round-trip ──
+const QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
+const quotaCooldown = {}; // { [modelName]: expiresAtTimestampMs }
+function isQuotaCooldownActive(model) {
+  const exp = quotaCooldown[model];
+  return exp && exp > Date.now();
+}
+function markQuotaCooldown(model) {
+  quotaCooldown[model] = Date.now() + QUOTA_COOLDOWN_MS;
+  console.warn(`[Quota] ${model} cooldown 1h (until ${new Date(quotaCooldown[model]).toISOString()})`);
+}
+function cooldownSnapshot() {
+  const out = {};
+  for (const [m, exp] of Object.entries(quotaCooldown)) {
+    const remainingMin = Math.ceil((exp - Date.now()) / 60000);
+    if (remainingMin > 0) out[m] = remainingMin;
+  }
+  return out;
+}
+
 // ── 從回應中提取 JSON ───────────────────────────────────────
 function extractJSON(text) {
   if (!text) return null;
@@ -127,6 +147,12 @@ async function callGemini(prompt, maxTokens) {
   const errors = [];
 
   for (const model of models) {
+    if (isQuotaCooldownActive(model)) {
+      const remainingMin = Math.ceil((quotaCooldown[model] - Date.now()) / 60000);
+      console.log(`[Gemini] 跳過 ${model}（quota cooldown，剩 ${remainingMin} 分鐘）`);
+      errors.push({ model, msg: `跳過：quota cooldown 中（剩 ${remainingMin} 分）` });
+      continue;
+    }
     try {
       console.log(`[Gemini] 嘗試 ${model}...`);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
@@ -163,6 +189,7 @@ async function callGemini(prompt, maxTokens) {
       errors.push({ model, msg: detailMsg });
       stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
       recordModelFailure('gemini', model, detailMsg);
+      if (status === 429) markQuotaCooldown(model);
     }
   }
   return { ok: false, errors };
@@ -530,6 +557,7 @@ app.get('/api/stats', (req, res) => {
     modelHits: stats.modelHits,
     modelFails: stats.modelFails,
     lastFailures: stats.lastFailures,
+    quotaCooldownMinutes: cooldownSnapshot(),
   });
 });
 
