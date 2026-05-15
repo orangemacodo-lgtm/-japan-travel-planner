@@ -58,14 +58,18 @@ function recordChunkIncomplete(chunkIndex, start, end, issues) {
 }
 // ── Quota-aware cooldown：429 後該 model 暫停 1 hr，避免每次都浪費 round-trip ──
 const QUOTA_COOLDOWN_MS = 60 * 60 * 1000;
+const GEMINI_REGION_BLOCK_MS = 24 * 60 * 60 * 1000; // 地理封鎖：罰 24h，反正本 session 都別再試了
 const quotaCooldown = {}; // { [modelName]: expiresAtTimestampMs }
+// [PATCH-F] Gemini 整家供應商鎖：用戶在台灣等被 Google 區域封鎖的地方，整個 Gemini chain 都沒救
+let geminiProviderDisabled = false;
+let geminiProviderDisabledReason = '';
 function isQuotaCooldownActive(model) {
   const exp = quotaCooldown[model];
   return exp && exp > Date.now();
 }
-function markQuotaCooldown(model) {
-  quotaCooldown[model] = Date.now() + QUOTA_COOLDOWN_MS;
-  console.warn(`[Quota] ${model} cooldown 1h (until ${new Date(quotaCooldown[model]).toISOString()})`);
+function markQuotaCooldown(model, ms = QUOTA_COOLDOWN_MS) {
+  quotaCooldown[model] = Date.now() + ms;
+  console.warn(`[Quota] ${model} cooldown ${Math.round(ms / 60000)}m (until ${new Date(quotaCooldown[model]).toISOString()})`);
 }
 function cooldownSnapshot() {
   const out = {};
@@ -149,10 +153,26 @@ function buildSightseeingNag(shorts) {
   const list = shorts.map(s => `Day ${s.dayNumber}(只有 ${s.count} 個)`).join('、');
   return `\n\n【上次違反硬規則】${list} 的 type=SIGHTSEEING 不到 ${MIN_SIGHTSEEING_PER_DAY} 個。請重新生成，每天 type=SIGHTSEEING 至少 ${MIN_SIGHTSEEING_PER_DAY} 個；若想不到就把 ACTIVITY/SHOPPING 改成 SIGHTSEEING 補齊。`;
 }
-// [PATCH-D] ── 結構完整性檢查：theme/region/coordinates 缺失偵測 ──
+// [PATCH-D] ── 結構完整性檢查：theme/region/coordinates/igCaption 缺失偵測 ──
 // 這是修正本次 bug 的核心。原本驗證只看「天數」和「景點數」，所以模型只要交骨架就能過關。
 // 現在每個欄位都要齊全才放行。
 const COORD_REQUIRED_TYPES = new Set(['SIGHTSEEING', 'FOOD', 'ACTIVITY', 'SHOPPING']);
+// [PATCH-G] prompt 範例座標。若模型偷懶套用這幾組數值，視為「沒填」。
+const PROMPT_EXAMPLE_COORDS = [
+  [34.69, 135.50], // 大阪城範例
+  [0, 0],
+];
+function isSuspectCoord(lat, lng) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return true;
+  if (!isFinite(lat) || !isFinite(lng)) return true;
+  // 範例值或全 0
+  for (const [el, en] of PROMPT_EXAMPLE_COORDS) {
+    if (Math.abs(lat - el) < 0.01 && Math.abs(lng - en) < 0.01) return true;
+  }
+  // 日本經緯度的合理範圍：lat 24-46, lng 122-146
+  if (lat < 20 || lat > 50 || lng < 120 || lng > 150) return true;
+  return false;
+}
 function findIncompleteFields(parsed, expectedStart, expectedEnd) {
   const issues = [];
   if (!Array.isArray(parsed?.itinerary)) {
@@ -181,11 +201,16 @@ function findIncompleteFields(parsed, expectedStart, expectedEnd) {
         issues.push(`Day ${dn} act#${idx + 1}: missing name`);
         continue;
       }
+      // [PATCH-D2] igCaption 必填，且 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 都要有
       if (COORD_REQUIRED_TYPES.has(act?.type)) {
+        if (!act?.igCaption || typeof act.igCaption !== 'string' || act.igCaption.trim().length < 5) {
+          issues.push(`Day ${dn} "${act.name}": missing/short igCaption`);
+        }
+        // [PATCH-G] 座標健全性：不只要存在，還要在日本範圍且非範例值
         const lat = act?.coordinates?.lat;
         const lng = act?.coordinates?.lng;
-        if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
-          issues.push(`Day ${dn} "${act.name}": missing/invalid coordinates`);
+        if (isSuspectCoord(lat, lng)) {
+          issues.push(`Day ${dn} "${act.name}": suspect/missing coordinates (${lat},${lng})`);
         }
       }
     }
@@ -200,6 +225,10 @@ function buildIncompleteNag(issues) {
 // ── Gemini API 呼叫 ─────────────────────────────────────────
 async function callGemini(prompt, maxTokens) {
   if (!API_KEY) return { ok: false, errors: [{ model: 'gemini', msg: 'GEMINI_API_KEY 未設定' }] };
+  // [PATCH-F] 整家供應商被區域封鎖時，直接跳過
+  if (geminiProviderDisabled) {
+    return { ok: false, errors: [{ model: 'gemini', msg: `跳過：Gemini provider 已停用（${geminiProviderDisabledReason}）` }] };
+  }
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'];
   const errors = [];
   for (const model of models) {
@@ -250,17 +279,28 @@ async function callGemini(prompt, maxTokens) {
       stats.modelFails[model] = (stats.modelFails[model] || 0) + 1;
       recordModelFailure('gemini', model, detailMsg);
       if (status === 429) markQuotaCooldown(model);
+      // [PATCH-F] 地理封鎖：整家 provider 停用，本 session 不要再試
+      if (status === 400 && /location is not supported/i.test(msg)) {
+        geminiProviderDisabled = true;
+        geminiProviderDisabledReason = `${model}: ${msg}`;
+        console.warn(`[Gemini] 偵測到地理封鎖，整家 Gemini provider 已停用本 session`);
+        // 後續模型不必再試
+        break;
+      }
     }
   }
   return { ok: false, errors };
 }
 // ── Groq API 呼叫（fallback）────────────────────────────────
+// [PATCH-H] 重排：原本 llama-3.3-70b 在最前，但它每分鐘 token 上限只有 12000，
+// 配上 chunk prompt 17K+ 必然 413。實測唯一能扛長 chunk 的是 llama-4-scout，所以放最前。
+// 70b 留在隊伍裡，但移到很後面，做為「真的沒人能撐時」的最後一線。
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
   'meta-llama/llama-4-scout-17b-16e-instruct',
-  'qwen/qwen3-32b',
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b',
+  'qwen/qwen3-32b',
+  'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
 ];
 // [PATCH-B] 每個 Groq 模型的實際輸出上限。原本一律封頂 8000，會把長 chunk 腰斬。
@@ -380,8 +420,10 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
     if (!prompt) return res.status(400).json({ ok: false, error: '缺少 prompt' });
     const dayMatch = prompt.match(/(\d+)\s*天/);
     const totalDays = dayMatch ? parseInt(dayMatch[1], 10) : 0;
-    const CHUNK_THRESHOLD = 5;
-    const CHUNK_SIZE = 4;
+    const CHUNK_THRESHOLD = 4;
+    // [PATCH-I] chunk size 從 4 改 3。原本 llama-4-scout 8K 上限 + 4 天 chunk 容易擠掉 igCaption。
+    // 改成 3 天 chunk，每塊更小、能完整寫滿欄位。11 天會切成 4 塊（1-3, 4-6, 7-9, 10-11）。
+    const CHUNK_SIZE = 3;
     // [PATCH-C] 給 chunking 一個明確的 maxTokens 預算（16000）。
     // 配合 PATCH-A/B：能傳得進去、不會被 Groq 端腰斬。
     const CHUNK_MAX_TOKENS = 16000;
@@ -410,7 +452,8 @@ app.post('/api/generate', generateLimiter, async (req, res) => {
 - itinerary 陣列長度必須剛好 = ${chunkDays}
 - 每個 itinerary 物件的 dayNumber 從 ${start} 開始遞增到 ${end}
 - 每個 itinerary 物件**必須**有非空 theme、region 字串；activities 陣列要有具體活動（至少 4 個）
-- 每個活動必須填齊 name（非空）、type、以及（SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 類）coordinates {lat: 數字, lng: 數字}
+- 每個活動必須填齊 name（非空）、type、igCaption（1-2 句 IG 網紅風格描述，含 emoji，至少 10 字，不可空字串）
+- 每個 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 活動必須有 coordinates {lat: 該地點實際緯度, lng: 該地點實際經度}。日本範圍內 lat 24-46、lng 122-146。嚴禁填 0、嚴禁套用範例值 34.69/135.50
 - ${isFirst ? '頂層欄位（tripTitle、overview、advice、packingList）正常輸出豐富內容' : '頂層欄位（tripTitle、overview、advice、packingList）可填空字串或空陣列以節省 token'}
 - 仍然遵守規則 A/B/C：每天必須完整、每個活動必須具體精準
 - 【本塊內也嚴禁重複】此塊第 ${start}-${end} 天的 SIGHTSEEING/FOOD/ACTIVITY/SHOPPING 類 activity.name 必須兩兩不同。HOTEL 類例外可重複。${exclusionBlock}`;
@@ -639,6 +682,9 @@ app.get('/api/stats', (req, res) => {
     // [NEW] 加上 chunk 觀測性
     chunkOutcomes: stats.chunkOutcomes,
     chunkIncomplete: stats.chunkIncomplete,
+    // [PATCH-F] Gemini provider 狀態
+    geminiProviderDisabled,
+    geminiProviderDisabledReason,
   });
 });
 // ── 除錯：列出 Groq 上實際可用的模型 ───────────────────────
@@ -724,6 +770,7 @@ app.listen(PORT, () => {
   console.log(`🔑 Groq Key:   ${GROQ_KEY ? '已設定 ✅' : '❌ 未設定'}`);
   console.log(`📌 主力：gemini-2.5-flash → 2.0-flash → 2.5-flash-lite`);
   console.log(`📌 備援：llama-3.3-70b → llama-4-scout → qwen3-32b → gpt-oss-120b → gpt-oss-20b → llama-3.1-8b`);
-  console.log(`🧩 Chunking：≥5 天自動拆成 4 天/塊，maxTokens=16000，含結構驗證與 2 次重試`);
+  console.log(`🧩 Chunking：≥4 天自動拆成 3 天/塊，maxTokens=16000，含結構驗證(theme/region/coord/igCaption)與 2 次重試`);
   console.log(`🔧 測試：/api/test | 除錯：/api/debug-generate | 觀測：/api/stats\n`);
 });
+ 
