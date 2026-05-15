@@ -791,6 +791,7 @@ JSON 結構（每欄都要有，不可省略）：
     }
     
     plan = parsed;
+    plan._chunkWarnings = data.chunkWarnings || null;
     plan.transportationMode = transport;
     // 用表單天數作為備用
     plan._formDays = days;
