@@ -930,10 +930,6 @@ function renderTab() {
 
   // Itinerary
   let h = '';
-  if (plan._chunkWarnings && plan._chunkWarnings.length > 0) {
-    const dayList = plan._chunkWarnings.map(w => `Day ${w.days}`).join('、');
-    h += `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:12px"><div style="font-weight:700;color:#991b1b;font-size:14px">⚠️ ${dayList} 部分內容生成不完整</div><div style="font-size:12px;color:#7f1d1d;margin-top:4px">建議重新規劃；若仍重複，請縮短天數至 8 天內。</div><button onclick="generate()" style="margin-top:8px;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">🔄 重新規劃</button></div>`;
-  }
   (plan.itinerary || []).forEach((day, di) => {
     const isOpen = openDay === di;
     h += `<div class="day-card" style="animation-delay:${di*0.05}s">
