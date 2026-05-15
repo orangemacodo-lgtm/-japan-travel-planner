@@ -726,3 +726,4 @@ app.listen(PORT, () => {
   console.log(`📌 備援：llama-3.3-70b → llama-4-scout → qwen3-32b → gpt-oss-120b → gpt-oss-20b → llama-3.1-8b`);
   console.log(`🧩 Chunking：≥5 天自動拆成 4 天/塊，maxTokens=16000，含結構驗證與 2 次重試`);
   console.log(`🔧 測試：/api/test | 除錯：/api/debug-generate | 觀測：/api/stats\n`);
+});
