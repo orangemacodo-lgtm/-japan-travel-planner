@@ -157,18 +157,13 @@ function buildSightseeingNag(shorts) {
 // 這是修正本次 bug 的核心。原本驗證只看「天數」和「景點數」，所以模型只要交骨架就能過關。
 // 現在每個欄位都要齊全才放行。
 const COORD_REQUIRED_TYPES = new Set(['SIGHTSEEING', 'FOOD', 'ACTIVITY', 'SHOPPING']);
-// [PATCH-G] prompt 範例座標。若模型偷懶套用這幾組數值，視為「沒填」。
-const PROMPT_EXAMPLE_COORDS = [
-  [34.69, 135.50], // 大阪城範例
-  [0, 0],
-];
+// [PATCH-G v2] 放寬：原本「在 34.69/135.50 範例值 ±0.01 內」的判斷會誤殺大阪城真實座標
+// （大阪城本來就在 34.69/135.50 附近）。改成只擋真正可疑的：0,0 或不在日本範圍。
 function isSuspectCoord(lat, lng) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return true;
   if (!isFinite(lat) || !isFinite(lng)) return true;
-  // 範例值或全 0
-  for (const [el, en] of PROMPT_EXAMPLE_COORDS) {
-    if (Math.abs(lat - el) < 0.01 && Math.abs(lng - en) < 0.01) return true;
-  }
+  // 0,0 視為沒填
+  if (Math.abs(lat) < 0.001 && Math.abs(lng) < 0.001) return true;
   // 日本經緯度的合理範圍：lat 24-46, lng 122-146
   if (lat < 20 || lat > 50 || lng < 120 || lng > 150) return true;
   return false;
