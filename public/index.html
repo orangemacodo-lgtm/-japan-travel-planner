@@ -719,7 +719,7 @@ async function generate() {
 
   const prompt = `日本旅遊規劃師+IG網紅。繁體中文。只輸出 JSON。
 
-行程：${regLabel}、${startDate}~${endDate}（${days}天）、${arrTime}到${depTime}離、${adults}大${kids}小(${members})、${isCar?'自駕':'大眾運輸'}、興趣${[...selectedInterests].join('/')}${beenBefore?'、深度旅':''}${requests?'、需求：'+requests:''}
+行程：${regLabel}、${startDate}~${endDate}（${days}天）、${arrTime}到${depTime}離、${adults}大${kids}小(${members})、${beenBefore?'、【深度旅模式（熟客嚴禁老梗）】絕對禁止列入：大阪城、心齋橋、道頓堀、黑門市場、環球影城、清水寺、金閣寺、伏見稻荷、嵐山、淺草寺、晴空塔、東京塔、原宿、銀座、台場、秋葉原、新宿御苑 等大眾觀光客集散地。改推在地人會去的咖啡館、隱藏神社、職人小店、夜景秘境、老街巷弄、地方市場。餐廳嚴禁連鎖品牌（一蘭、すき家、丸亀製麺、CoCo壱番屋、吉野家、松屋、Mister Donut），改用職人個人店、在地排隊店、深夜食堂等級的小店。至少 3 處景點要「中文資料稀缺、日文評價熱絡」的等級':''}
 
 JSON 結構（每欄都要有，不可省略）：
 {"tripTitle":"","overview":"","advice":["",""],"packingList":[{"category":"","items":[""]}],
